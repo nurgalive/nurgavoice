@@ -229,7 +229,7 @@ def transcribe_and_summarize(
         if audio_path != file_path and os.path.exists(audio_path):
             os.remove(audio_path)
 
-        self.update_state(state="SUCCESS", meta={"step": "Complete", "progress": 100})
+        # Return the final result (don't call update_state with SUCCESS - Celery handles that automatically)
         return final_result
 
     except Exception as e:

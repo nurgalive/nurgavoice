@@ -2,7 +2,8 @@ import os
 
 class Config:
     # File upload settings
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    # MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+    MAX_FILE_SIZE = 1024 * 1024 * 1024  # 100MB
     ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.avi', '.m4a', '.flac'}
     UPLOAD_DIR = "uploads"
     RESULTS_DIR = "results"

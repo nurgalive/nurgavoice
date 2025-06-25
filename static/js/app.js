@@ -51,9 +51,10 @@ class NurgaVoiceApp {
         const file = event.target.files[0];
         if (file) {
             // Validate file size
-            const maxSize = 100 * 1024 * 1024; // 100MB
+            // const maxSize = 100 * 1024 * 1024; // 100MB
+            const maxSize = 1024 * 1024 * 1024; // 1024MB
             if (file.size > maxSize) {
-                this.showError('File size exceeds 100MB limit.');
+                this.showError('File size exceeds 1024MB limit.');
                 this.fileInput.value = '';
                 return;
             }
@@ -195,7 +196,8 @@ class NurgaVoiceApp {
                 this.updateProgress(data.progress || 0, data.step || 'Processing...');
                 break;
             case 'SUCCESS':
-                this.handleSuccess(data.result);
+                // Make sure we pass the actual result data
+                this.handleSuccess(data.result || data);
                 break;
             case 'FAILURE':
                 this.handleFailure(data.error);
@@ -237,17 +239,27 @@ class NurgaVoiceApp {
         // Show results section
         this.resultsSection.style.display = 'block';
         
-        // Display summary
-        this.summaryContent.textContent = result.summary || 'No summary available';
+        // Display summary with fallback
+        if (result && result.summary) {
+            this.summaryContent.textContent = result.summary;
+        } else {
+            this.summaryContent.textContent = 'No summary available';
+        }
         
-        // Display transcription
-        this.transcriptionContent.textContent = result.transcription?.text || 'No transcription available';
+        // Display transcription with fallback
+        if (result && result.transcription && result.transcription.text) {
+            this.transcriptionContent.textContent = result.transcription.text;
+        } else {
+            this.transcriptionContent.textContent = 'No transcription available';
+        }
         
         // Display metadata
-        this.displayMetadata(result.metadata);
+        if (result && result.metadata) {
+            this.displayMetadata(result.metadata);
+        }
         
         // Display timestamped transcription if available
-        if (result.transcription?.segments && result.transcription.segments.length > 0) {
+        if (result && result.transcription && result.transcription.segments && result.transcription.segments.length > 0) {
             this.displayTimestampedTranscription(result.transcription.segments);
         }
         
