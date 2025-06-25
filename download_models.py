@@ -10,6 +10,18 @@ from pathlib import Path
 
 # Popular GGUF model URLs (these are examples - replace with actual URLs)
 POPULAR_MODELS = {
+    "gemma3-1b": {
+        "url": "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf",
+        "filename": "ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf",
+        "size": "1.2GB",
+        "description": "Gemma 3 1B Instruct (Q4_K_M) - Fast and efficient instruction-following model"
+    },
+    "gemma3-12b": {
+        "url": "https://huggingface.co/ggml-org/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
+        "filename": "gemma-3-12b-it-Q4_K_M.gguf",
+        "size": "7.2GB",
+        "description": "Gemma 3 12B Instruct (Q4_K_M) - High quality instruction-following model"
+    },
     "llama2-7b-chat-q4": {
         "url": "https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.q4_0.gguf",
         "filename": "llama-2-7b-chat.q4_0.gguf",
@@ -166,9 +178,9 @@ def main():
             if download_model(model_key):
                 update_config(model_key)
     elif command == "recommended":
-        print("Downloading recommended model: llama2-7b-chat-q4")
-        if download_model("llama2-7b-chat-q4"):
-            update_config("llama2-7b-chat-q4")
+        print("Downloading recommended model: gemma3-1b")
+        if download_model("gemma3-1b"):
+            update_config("gemma3-1b")
     else:
         print(f"❌ Unknown command: {command}")
 

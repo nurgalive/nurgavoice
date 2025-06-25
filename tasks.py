@@ -18,7 +18,7 @@ celery_app = Celery(
 
 # Global variables for loaded models
 whisper_model = None
-llama_model = None
+llm_model = None  # Renamed from llama_model to be more generic
 
 
 def load_whisper_model():
@@ -39,8 +39,8 @@ def load_whisper_model():
 
 
 def load_llama_model(model_name: str | None = None):
-    """Load Llama model if not already loaded"""
-    global llama_model
+    """Load LLM model (Gemma, Llama, etc.) if not already loaded"""
+    global llm_model
     
     # Determine which model to load
     if model_name and model_name in Config.AVAILABLE_LLAMA_MODELS:
@@ -53,10 +53,10 @@ def load_llama_model(model_name: str | None = None):
         context_size = Config.LLAMA_MODEL_CONTEXT_SIZE
         threads = Config.LLAMA_MODEL_THREADS
     
-    if llama_model is None and os.path.exists(model_path):
+    if llm_model is None and os.path.exists(model_path):
         try:
-            print(f"Loading Llama model from: {model_path}")
-            llama_model = Llama(
+            print(f"Loading LLM model from: {model_path}")
+            llm_model = Llama(
                 model_path=model_path,
                 n_ctx=context_size,
                 n_threads=threads,
@@ -66,16 +66,16 @@ def load_llama_model(model_name: str | None = None):
                 use_mmap=True,  # Use memory mapping for faster loading
                 use_mlock=False,  # Don't lock model in RAM (allows swapping)
             )
-            print(f"Successfully loaded Llama model with {context_size} context size")
+            print(f"Successfully loaded LLM model with {context_size} context size")
         except Exception as e:
-            print(f"Error loading Llama model: {e}")
+            print(f"Error loading LLM model: {e}")
             print(f"Make sure the model file exists at: {model_path}")
             print("You can download models from: https://huggingface.co/models")
     elif not os.path.exists(model_path):
-        print(f"Llama model not found at: {model_path}")
+        print(f"LLM model not found at: {model_path}")
         print("Please download a compatible model file.")
     
-    return llama_model
+    return llm_model
 
 
 def convert_to_audio(file_path: str) -> str:
@@ -105,16 +105,16 @@ def convert_to_audio(file_path: str) -> str:
 
 
 def generate_summary(text: str, length: str = "medium") -> str:
-    """Generate summary using Llama model"""
+    """Generate summary using LLM model (Gemma 3 optimized)"""
     llama = load_llama_model()
     if not llama:
-        return "Summary generation unavailable (Llama model not loaded)"
+        return "Summary generation unavailable (LLM model not loaded)"
 
-    # Define prompts based on summary length
+    # Define prompts optimized for Gemma 3's instruction-following format
     prompts = {
-        "short": f"Summarize the following text in 1-2 sentences:\n\n{text}\n\nSummary:",
-        "medium": f"Summarize the following text in one paragraph:\n\n{text}\n\nSummary:",
-        "long": f"Provide a detailed summary of the following text:\n\n{text}\n\nSummary:",
+        "short": f"<start_of_turn>user\nPlease provide a concise summary of the following text in 1-2 sentences:\n\n{text}<end_of_turn>\n<start_of_turn>model\n",
+        "medium": f"<start_of_turn>user\nPlease summarize the following text in one clear paragraph:\n\n{text}<end_of_turn>\n<start_of_turn>model\n",
+        "long": f"<start_of_turn>user\nPlease provide a detailed summary of the following text, covering the main points and key details:\n\n{text}<end_of_turn>\n<start_of_turn>model\n",
     }
 
     prompt = prompts.get(length, prompts["medium"])
@@ -124,7 +124,7 @@ def generate_summary(text: str, length: str = "medium") -> str:
             prompt,
             max_tokens=512 if length == "long" else 256,
             temperature=0.7,
-            stop=["Summary:", "\n\n"],
+            stop=["<end_of_turn>", "<start_of_turn>"],
             stream=False  # Ensure we get a complete response, not a stream
         )
         # Handle the response correctly based on llama-cpp-python structure
