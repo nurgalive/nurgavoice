@@ -1,0 +1,271 @@
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+import os
+import uuid
+import json
+import aiofiles
+from pathlib import Path
+from tasks import celery_app, transcribe_and_summarize
+from config import Config
+import asyncio
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
+
+app = FastAPI(title="Audio/Video Transcription & Summarization", version="1.0.0")
+
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict = {}
+
+    async def connect(self, websocket: WebSocket, task_id: str):
+        await websocket.accept()
+        self.active_connections[task_id] = websocket
+
+    def disconnect(self, task_id: str):
+        if task_id in self.active_connections:
+            del self.active_connections[task_id]
+
+    async def send_update(self, task_id: str, message: dict):
+        if task_id in self.active_connections:
+            try:
+                await self.active_connections[task_id].send_json(message)
+            except Exception:
+                self.disconnect(task_id)
+
+manager = ConnectionManager()
+
+def validate_file(file: UploadFile) -> None:
+    """Validate uploaded file"""
+    # Check file size
+    if hasattr(file, 'size') and file.size > Config.MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"File too large. Maximum size is {Config.MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+    
+    # Check file extension
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in Config.ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}"
+        )
+
+@app.get("/", response_class=HTMLResponse)
+async def main_page(request: Request):
+    """Main web interface"""
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "languages": Config.SUPPORTED_LANGUAGES,
+        "summary_lengths": Config.SUMMARY_LENGTHS,
+        "max_size_mb": Config.MAX_FILE_SIZE // (1024*1024)
+    })
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    language: str = Form("auto"),
+    summary_length: str = Form("medium")
+):
+    """Upload file and start transcription task"""
+    validate_file(file)
+    
+    # Generate unique task ID
+    task_id = str(uuid.uuid4())
+    
+    # Save uploaded file
+    file_path = os.path.join(Config.UPLOAD_DIR, f"{task_id}_{file.filename}")
+    
+    try:
+        async with aiofiles.open(file_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
+        
+        # Start transcription task
+        task = transcribe_and_summarize.delay(file_path, language, summary_length)
+        
+        return {
+            "task_id": task.id,
+            "message": "File uploaded successfully. Transcription started.",
+            "filename": file.filename
+        }
+    
+    except Exception as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
+@app.get("/status/{task_id}")
+async def get_task_status(task_id: str):
+    """Get transcription task status"""
+    task = celery_app.AsyncResult(task_id)
+    
+    if task.state == 'PENDING':
+        response = {
+            'state': task.state,
+            'status': 'Task is waiting to be processed'
+        }
+    elif task.state == 'PROGRESS':
+        response = {
+            'state': task.state,
+            'step': task.info.get('step', ''),
+            'progress': task.info.get('progress', 0)
+        }
+    elif task.state == 'SUCCESS':
+        response = {
+            'state': task.state,
+            'result': task.result
+        }
+    else:  # FAILURE
+        response = {
+            'state': task.state,
+            'error': str(task.info)
+        }
+    
+    return response
+
+@app.websocket("/ws/{task_id}")
+async def websocket_endpoint(websocket: WebSocket, task_id: str):
+    """WebSocket for real-time updates"""
+    await manager.connect(websocket, task_id)
+    try:
+        while True:
+            # Check task status
+            task = celery_app.AsyncResult(task_id)
+            
+            if task.state == 'PROGRESS':
+                await manager.send_update(task_id, {
+                    'state': task.state,
+                    'step': task.info.get('step', ''),
+                    'progress': task.info.get('progress', 0)
+                })
+            elif task.state in ['SUCCESS', 'FAILURE']:
+                if task.state == 'SUCCESS':
+                    await manager.send_update(task_id, {
+                        'state': task.state,
+                        'result': task.result
+                    })
+                else:
+                    await manager.send_update(task_id, {
+                        'state': task.state,
+                        'error': str(task.info)
+                    })
+                break
+            
+            await asyncio.sleep(1)
+    
+    except WebSocketDisconnect:
+        manager.disconnect(task_id)
+
+@app.get("/download/{task_id}/{format}")
+async def download_result(task_id: str, format: str):
+    """Download transcription results"""
+    if format not in ['txt', 'pdf']:
+        raise HTTPException(status_code=400, detail="Format must be 'txt' or 'pdf'")
+    
+    result_file = os.path.join(Config.RESULTS_DIR, f"{task_id}.json")
+    if not os.path.exists(result_file):
+        raise HTTPException(status_code=404, detail="Result not found")
+    
+    with open(result_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    if format == 'txt':
+        # Create TXT file
+        content = f"TRANSCRIPTION\n{'='*50}\n\n"
+        content += data['transcription']['text'] + "\n\n"
+        content += f"SUMMARY\n{'='*50}\n\n"
+        content += data['summary'] + "\n\n"
+        content += f"METADATA\n{'='*50}\n\n"
+        content += f"File: {data['metadata']['file_name']}\n"
+        content += f"Language: {data['metadata']['language']}\n"
+        content += f"Summary Length: {data['metadata']['summary_length']}\n"
+        
+        if data['metadata'].get('duration'):
+            content += f"Duration: {data['metadata']['duration']:.2f} seconds\n"
+        
+        # Add timestamps if available
+        if data['transcription'].get('segments'):
+            content += f"\n\nTIMESTAMPED TRANSCRIPTION\n{'='*50}\n\n"
+            for segment in data['transcription']['segments']:
+                start = segment.get('start', 0)
+                end = segment.get('end', 0)
+                text = segment.get('text', '')
+                content += f"[{start:.2f}s - {end:.2f}s] {text}\n"
+        
+        filename = f"transcription_{task_id}.txt"
+        file_path = os.path.join(Config.RESULTS_DIR, filename)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return FileResponse(
+            file_path, 
+            filename=filename,
+            media_type='text/plain'
+        )
+    
+    elif format == 'pdf':
+        # Create PDF file
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        story.append(Paragraph("Transcription and Summary Report", styles['Title']))
+        story.append(Spacer(1, 12))
+        
+        # Metadata
+        story.append(Paragraph("Metadata", styles['Heading1']))
+        story.append(Paragraph(f"<b>File:</b> {data['metadata']['file_name']}", styles['Normal']))
+        story.append(Paragraph(f"<b>Language:</b> {data['metadata']['language']}", styles['Normal']))
+        story.append(Paragraph(f"<b>Summary Length:</b> {data['metadata']['summary_length']}", styles['Normal']))
+        
+        if data['metadata'].get('duration'):
+            story.append(Paragraph(f"<b>Duration:</b> {data['metadata']['duration']:.2f} seconds", styles['Normal']))
+        
+        story.append(Spacer(1, 12))
+        
+        # Summary
+        story.append(Paragraph("Summary", styles['Heading1']))
+        story.append(Paragraph(data['summary'], styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Transcription
+        story.append(Paragraph("Full Transcription", styles['Heading1']))
+        story.append(Paragraph(data['transcription']['text'], styles['Normal']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        
+        filename = f"transcription_{task_id}.pdf"
+        file_path = os.path.join(Config.RESULTS_DIR, filename)
+        
+        with open(file_path, 'wb') as f:
+            f.write(buffer.getvalue())
+        
+        return FileResponse(
+            file_path, 
+            filename=filename,
+            media_type='application/pdf'
+        )
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "message": "Service is running"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

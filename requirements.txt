@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+jinja2
+aiofiles
+whisperx
+faster-whisper
+pydub
+ffmpeg-python
+llama-cpp-python
+reportlab
+python-magic
+celery
+redis
+websockets
