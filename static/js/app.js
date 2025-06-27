@@ -4,6 +4,7 @@ class NurgaVoiceApp {
         this.currentTaskId = null;
         this.websocket = null;
         this.isProcessing = false;
+        this.processingStartTime = null;
         
         this.initializeElements();
         this.bindEvents();
@@ -22,6 +23,9 @@ class NurgaVoiceApp {
         this.uploadPrompt = document.getElementById('uploadPrompt');
         this.fileInfo = document.getElementById('fileInfo');
         this.fileName = document.getElementById('fileName');
+        this.completionInfo = document.getElementById('completionInfo');
+        this.processingTime = document.getElementById('processingTime');
+        this.completionTime = document.getElementById('completionTime');
         
         // Results elements
         this.resultsSection = document.getElementById('resultsSection');
@@ -146,6 +150,7 @@ class NurgaVoiceApp {
 
     startProcessing(filename) {
         this.isProcessing = true;
+        this.processingStartTime = new Date();
         this.hideError();
         this.hideResults();
         
@@ -153,6 +158,7 @@ class NurgaVoiceApp {
         this.uploadPrompt.style.display = 'none';
         this.progressSection.style.display = 'block';
         this.fileInfo.style.display = 'block';
+        this.completionInfo.style.display = 'none';
         this.fileName.textContent = filename;
         
         // Disable upload button
@@ -161,6 +167,10 @@ class NurgaVoiceApp {
         
         // Reset progress
         this.updateProgress(0, 'Starting upload...');
+        
+        // Reset progress bar styling
+        this.progressBar.classList.remove('bg-success');
+        this.progressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
     }
 
     stopProcessing() {
@@ -294,9 +304,25 @@ class NurgaVoiceApp {
         this.stopProcessing();
         this.updateProgress(100, 'Complete!');
         
+        // Calculate processing time
+        const processingEndTime = new Date();
+        const processingDuration = Math.round((processingEndTime - this.processingStartTime) / 1000);
+        const processingTimeText = this.formatDuration(processingDuration);
+        const completionTimeText = processingEndTime.toLocaleTimeString();
+        
+        // Show completion information
+        this.statusMessage.style.display = 'none';
+        this.completionInfo.style.display = 'block';
+        this.processingTime.textContent = processingTimeText;
+        this.completionTime.textContent = completionTimeText;
+        
+        // Remove progress bar animation and make it green
+        this.progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+        this.progressBar.classList.add('bg-success');
+        
         setTimeout(() => {
             this.displayResults(result);
-        }, 1000);
+        }, 2000); // Show completion status for 2 seconds before showing results
     }
 
     handleFailure(error) {
@@ -305,8 +331,8 @@ class NurgaVoiceApp {
     }
 
     displayResults(result) {
-        // Hide progress section
-        this.progressSection.style.display = 'none';
+        // Keep progress section visible to show completion status
+        // this.progressSection.style.display = 'none'; // Commented out
         
         // Show results section
         this.resultsSection.style.display = 'block';
@@ -448,6 +474,28 @@ class NurgaVoiceApp {
     hideResults() {
         this.resultsSection.style.display = 'none';
         this.timestampSection.style.display = 'none';
+    }
+
+    formatDuration(seconds) {
+        if (seconds < 60) {
+            return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+        } else if (seconds < 3600) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            if (remainingSeconds === 0) {
+                return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+            } else {
+                return `${minutes}m ${remainingSeconds}s`;
+            }
+        } else {
+            const hours = Math.floor(seconds / 3600);
+            const remainingMinutes = Math.floor((seconds % 3600) / 60);
+            const remainingSeconds = seconds % 60;
+            let result = `${hours}h`;
+            if (remainingMinutes > 0) result += ` ${remainingMinutes}m`;
+            if (remainingSeconds > 0) result += ` ${remainingSeconds}s`;
+            return result;
+        }
     }
 }
 

@@ -93,11 +93,32 @@ def validate_file(file: UploadFile) -> None:
 @app.get("/", response_class=HTMLResponse)
 async def main_page(request: Request):
     """Main web interface"""
+    # Get current LLM model info
+    current_llm_model = None
+    llm_model_name = "Unknown"
+    llm_model_description = "Model information not available"
+    
+    # Find the current model in the available models
+    for model_key, model_info in Config.AVAILABLE_LLAMA_MODELS.items():
+        if model_info["path"] == Config.LLAMA_MODEL_PATH:
+            current_llm_model = model_key
+            llm_model_name = model_key.upper().replace("-", " ")
+            llm_model_description = model_info["description"]
+            break
+    
+    # If model not found in available models, use filename
+    if current_llm_model is None:
+        model_filename = Path(Config.LLAMA_MODEL_PATH).name
+        llm_model_name = model_filename.replace(".gguf", "").replace("_", " ").upper()
+    
     return templates.TemplateResponse("index.html", {
         "request": request,
         "languages": Config.SUPPORTED_LANGUAGES,
         "summary_lengths": Config.SUMMARY_LENGTHS,
-        "max_size_mb": Config.MAX_FILE_SIZE // (1024*1024)
+        "max_size_mb": Config.MAX_FILE_SIZE // (1024*1024),
+        "whisper_model": Config.WHISPER_MODEL,
+        "llm_model_name": llm_model_name,
+        "llm_model_description": llm_model_description
     })
 
 @app.post("/upload")
