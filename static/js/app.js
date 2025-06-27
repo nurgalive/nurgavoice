@@ -87,26 +87,60 @@ class NurgaVoiceApp {
             return;
         }
 
+        console.log('Starting upload process...');
+        console.log('File:', file.name, 'Size:', file.size);
+        console.log('Current location:', window.location.href);
+        
         this.startProcessing(file.name);
 
         try {
+            console.log('Making fetch request to /upload...');
             const response = await fetch('/upload', {
                 method: 'POST',
                 body: formData
             });
 
-            const data = await response.json();
+            console.log('Response received:', response.status, response.statusText);
 
             if (!response.ok) {
-                throw new Error(data.detail || 'Upload failed');
+                // Try to get error details from response
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail || errorMessage;
+                } catch (parseError) {
+                    // If we can't parse JSON, use the text response
+                    try {
+                        const errorText = await response.text();
+                        if (errorText) {
+                            errorMessage = errorText;
+                        }
+                    } catch (textError) {
+                        // Keep the original HTTP error message
+                    }
+                }
+                throw new Error(errorMessage);
             }
 
+            const data = await response.json();
+            console.log('Upload successful, task ID:', data.task_id);
+            
             this.currentTaskId = data.task_id;
             this.connectWebSocket();
             
         } catch (error) {
+            console.error('Upload error:', error);
             this.stopProcessing();
-            this.showError(`Upload failed: ${error.message}`);
+            
+            // Provide more specific error messages
+            let errorMessage = error.message;
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                errorMessage = 'Network error: Unable to connect to server. Please check your internet connection.';
+            } else if (error.message.includes('insecure') || error.message.includes('mixed content')) {
+                errorMessage = 'Security error: Mixed content detected. This may be due to HTTPS/HTTP protocol mismatch.';
+            }
+            
+            this.showError(`Upload failed: ${errorMessage}`);
         }
     }
 
@@ -146,31 +180,69 @@ class NurgaVoiceApp {
     connectWebSocket() {
         if (!this.currentTaskId) return;
 
-        const wsUrl = `ws://${window.location.host}/ws/${this.currentTaskId}`;
-        this.websocket = new WebSocket(wsUrl);
+        // Check if we're running through ngrok
+        const isNgrok = window.location.hostname.includes('ngrok');
+        
+        // Use secure WebSocket (wss://) if page is served over HTTPS, otherwise use ws://
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/${this.currentTaskId}`;
+        
+        console.log('WebSocket URL:', wsUrl);
+        console.log('Page protocol:', window.location.protocol);
+        console.log('Is ngrok:', isNgrok);
+        
+        try {
+            this.websocket = new WebSocket(wsUrl);
+        } catch (error) {
+            console.error('Failed to create WebSocket:', error);
+            // For ngrok, immediately fall back to polling
+            this.fallbackToPolling();
+            return;
+        }
 
         this.websocket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             this.handleWebSocketMessage(data);
         };
 
-        this.websocket.onclose = () => {
-            console.log('WebSocket connection closed');
+        this.websocket.onopen = () => {
+            console.log('WebSocket connection established');
+        };
+
+        this.websocket.onclose = (event) => {
+            console.log('WebSocket connection closed', event.code, event.reason);
+            if (this.isProcessing) {
+                console.log('Falling back to polling due to WebSocket closure');
+                this.fallbackToPolling();
+            }
         };
 
         this.websocket.onerror = (error) => {
             console.error('WebSocket error:', error);
-            this.fallbackToPolling();
+            if (this.isProcessing) {
+                console.log('Falling back to polling due to WebSocket error');
+                // For ngrok or any WebSocket error, immediately fall back to polling
+                this.websocket = null; // Clear the websocket reference
+                this.fallbackToPolling();
+            }
         };
     }
 
     fallbackToPolling() {
         if (!this.currentTaskId || !this.isProcessing) return;
 
+        console.log('Starting polling fallback for task:', this.currentTaskId);
+        
         const pollInterval = setInterval(async () => {
             try {
                 const response = await fetch(`/status/${this.currentTaskId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('Polling status:', data);
                 
                 this.handleStatusUpdate(data);
                 
@@ -180,7 +252,7 @@ class NurgaVoiceApp {
             } catch (error) {
                 console.error('Polling error:', error);
                 clearInterval(pollInterval);
-                this.showError('Connection error. Please try again.');
+                this.showError(`Connection error: ${error.message}. Please try again.`);
                 this.stopProcessing();
             }
         }, 2000);

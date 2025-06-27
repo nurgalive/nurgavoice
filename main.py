@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import json
@@ -17,6 +18,33 @@ from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
 
 app = FastAPI(title="Audio/Video Transcription & Summarization", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://loved-magpie-routinely.ngrok-free.app",
+        ],  # In production, replace with specific domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add middleware to handle ngrok-specific headers
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add headers that help with ngrok and security
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    # For ngrok, allow mixed content in development
+    if "ngrok" in str(request.url.hostname or ""):
+        response.headers["Content-Security-Policy"] = "upgrade-insecure-requests"
+    
+    return response
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -47,19 +75,20 @@ manager = ConnectionManager()
 def validate_file(file: UploadFile) -> None:
     """Validate uploaded file"""
     # Check file size
-    if hasattr(file, 'size') and file.size > Config.MAX_FILE_SIZE:
+    if hasattr(file, 'size') and file.size and file.size > Config.MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413, 
             detail=f"File too large. Maximum size is {Config.MAX_FILE_SIZE // (1024*1024)}MB"
         )
     
     # Check file extension
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in Config.ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file format. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}"
-        )
+    if file.filename:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in Config.ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file format. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}"
+            )
 
 @app.get("/", response_class=HTMLResponse)
 async def main_page(request: Request):
@@ -101,9 +130,29 @@ async def upload_file(
         }
     
     except Exception as e:
+        # Cleanup uploaded file on error
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+            except Exception as cleanup_error:
+                print(f"Warning: Could not delete uploaded file {file_path} after upload error: {cleanup_error}")
         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+
+@app.get("/upload")
+async def upload_info():
+    """Info endpoint for upload - shows when accessed directly"""
+    return {
+        "message": "Upload endpoint - use POST method with multipart/form-data",
+        "method": "POST",
+        "expected_fields": {
+            "file": "Audio/video file to transcribe",
+            "language": "Language code (optional, default: 'auto')",
+            "summary_length": "Summary length (optional, default: 'medium')"
+        },
+        "supported_formats": list(Config.ALLOWED_EXTENSIONS),
+        "max_file_size_mb": Config.MAX_FILE_SIZE // (1024*1024),
+        "web_interface": "Visit the main page at / to use the web interface"
+    }
 
 @app.get("/status/{task_id}")
 async def get_task_status(task_id: str):

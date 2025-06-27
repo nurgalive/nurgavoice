@@ -21,6 +21,16 @@ whisper_model = None
 llm_model = None  # Renamed from llama_model to be more generic
 
 
+def cleanup_file(file_path: str, description: str = "file") -> None:
+    """Safely delete a file with error handling"""
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            print(f"Deleted {description}: {file_path}")
+        except Exception as e:
+            print(f"Warning: Could not delete {description} {file_path}: {e}")
+
+
 def load_whisper_model():
     """Load WhisperX model if not already loaded"""
     global whisper_model
@@ -226,8 +236,12 @@ def transcribe_and_summarize(
             json.dump(final_result, f, ensure_ascii=False, indent=2)
 
         # Cleanup temporary files
-        if audio_path != file_path and os.path.exists(audio_path):
-            os.remove(audio_path)
+        if audio_path != file_path:
+            cleanup_file(audio_path, "temporary audio file")
+
+        # Cleanup uploaded file if configured to do so
+        if Config.DELETE_UPLOADED_FILES_AFTER_PROCESSING:
+            cleanup_file(file_path, "uploaded file")
 
         # Return the final result (don't call update_state with SUCCESS - Celery handles that automatically)
         return final_result
@@ -235,6 +249,11 @@ def transcribe_and_summarize(
     except Exception as e:
         error_msg = f"Error during transcription: {str(e)}"
         traceback.print_exc()
+        
+        # Cleanup uploaded file even on failure if configured to do so
+        if Config.DELETE_UPLOADED_FILES_AFTER_PROCESSING:
+            cleanup_file(file_path, "uploaded file after error")
+        
         self.update_state(
             state="FAILURE",
             meta={"error": error_msg, "traceback": traceback.format_exc()},

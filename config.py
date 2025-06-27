@@ -8,6 +8,11 @@ class Config:
     UPLOAD_DIR = "uploads"
     RESULTS_DIR = "results"
     
+    # File cleanup settings
+    DELETE_UPLOADED_FILES_AFTER_PROCESSING = True  # Set to False to keep uploaded files
+    # Note: Keeping uploaded files may be useful for debugging, reprocessing, or audit purposes
+    # but will consume more disk space over time
+    
     # AI Models
     WHISPER_MODEL = "base"  # options: tiny, base, small, medium, large
     
