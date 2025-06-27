@@ -60,10 +60,10 @@ class NurgaVoiceApp {
             }
 
             // Validate file type
-            const allowedTypes = ['.mp3', '.wav', '.mp4', '.avi', '.m4a', '.flac'];
+            const allowedTypes = ['.mp3', '.wav', '.mp4', '.avi', '.m4a', '.flac', '.ogg'];
             const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
             if (!allowedTypes.includes(fileExtension)) {
-                this.showError('Unsupported file format. Please use MP3, WAV, MP4, AVI, M4A, or FLAC.');
+                this.showError('Unsupported file format. Please use MP3, WAV, MP4, AVI, M4A, FLAC, or OGG.');
                 this.fileInput.value = '';
                 return;
             }
