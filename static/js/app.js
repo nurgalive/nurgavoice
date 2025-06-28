@@ -56,9 +56,9 @@ class NurgaVoiceApp {
         if (file) {
             // Validate file size
             // const maxSize = 100 * 1024 * 1024; // 100MB
-            const maxSize = 1024 * 1024 * 1024; // 1024MB
+            const maxSize = 512 * 1024 * 1024; // 512MB
             if (file.size > maxSize) {
-                this.showError('File size exceeds 1024MB limit.');
+                this.showError('File size exceeds 512MB limit.');
                 this.fileInput.value = '';
                 return;
             }
@@ -101,6 +101,9 @@ class NurgaVoiceApp {
             console.log('Making fetch request to /upload...');
             const response = await fetch('/upload', {
                 method: 'POST',
+                headers: {
+                    'X-API-Key': window.CONFIG.API_KEY
+                },
                 body: formData
             });
 
@@ -195,7 +198,7 @@ class NurgaVoiceApp {
         
         // Use secure WebSocket (wss://) if page is served over HTTPS, otherwise use ws://
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/${this.currentTaskId}`;
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/${this.currentTaskId}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`;
         
         console.log('WebSocket URL:', wsUrl);
         console.log('Page protocol:', window.location.protocol);
@@ -245,7 +248,11 @@ class NurgaVoiceApp {
         
         const pollInterval = setInterval(async () => {
             try {
-                const response = await fetch(`/status/${this.currentTaskId}`);
+                const response = await fetch(`/status/${this.currentTaskId}`, {
+                    headers: {
+                        'X-API-Key': window.CONFIG.API_KEY
+                    }
+                });
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -452,7 +459,7 @@ class NurgaVoiceApp {
     downloadFile(format) {
         if (!this.currentTaskId) return;
         
-        const url = `/download/${this.currentTaskId}/${format}`;
+        const url = `/download/${this.currentTaskId}/${format}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`;
         const link = document.createElement('a');
         link.href = url;
         link.download = `transcription_${this.currentTaskId}.${format}`;

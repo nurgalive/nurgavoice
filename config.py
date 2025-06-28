@@ -1,9 +1,15 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class Config:
+    # API Security
+    API_KEY = os.getenv("NURGAVOICE_API_KEY", "nurgavoice-demo-key-2025")  # Change default for production!
+    
     # File upload settings
-    # MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-    MAX_FILE_SIZE = 1024 * 1024 * 1024  # 100MB
+    MAX_FILE_SIZE = 512 * 1024 * 1024  # 512MB - reduced for demo safety
     ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.avi', '.m4a', '.flac', '.ogg'}
     UPLOAD_DIR = "uploads"
     RESULTS_DIR = "results"
@@ -27,32 +33,14 @@ class Config:
         "gemma3-1b": {
             "path": "models/ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf",
             "description": "Gemma 3 1B Instruct - Fast and efficient instruction-following model",
-            "context_size": 8192,
-            "recommended_threads": 4
+            "context_size": 32768,
+            "recommended_threads": 8
         },
         "gemma3-12b": {
             "path": "models/gemma-3-12b-it-Q4_K_M.gguf",
             "description": "Gemma 3 12B Instruct - High quality instruction-following model",
-            "context_size": 8192,
-            "recommended_threads": 6
-        },
-        "llama2-7b-chat": {
-            "path": "models/llama-2-7b-chat.q4_0.gguf",
-            "description": "Llama 2 7B Chat - Good balance of speed and quality",
-            "context_size": 4096,
-            "recommended_threads": 4
-        },
-        "llama2-13b-chat": {
-            "path": "models/llama-2-13b-chat.q4_0.gguf",
-            "description": "Llama 2 13B Chat - Higher quality, more resource intensive",
-            "context_size": 4096,
-            "recommended_threads": 6
-        },
-        "codellama-7b": {
-            "path": "models/codellama-7b-instruct.q4_0.gguf",
-            "description": "Code Llama 7B - Optimized for code generation",
-            "context_size": 16384,
-            "recommended_threads": 4
+            "context_size": 32768,
+            "recommended_threads": 8
         }
     }
     

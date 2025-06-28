@@ -1,9 +1,9 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import os
 import uuid
 import json
@@ -16,26 +16,54 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 app = FastAPI(title="Audio/Video Transcription & Summarization", version="1.0.0")
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+# Add trusted host middleware for security
+app.add_middleware(
+    TrustedHostMiddleware, 
+    allowed_hosts=["loved-magpie-routinely.ngrok-free.app", "localhost", "127.0.0.1"]
+)
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://loved-magpie-routinely.ngrok-free.app",
-        ],  # In production, replace with specific domains
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ],  # Restrict to your ngrok domain only
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],  # Only necessary methods
+    allow_headers=["Content-Type"],
 )
 
-# Add middleware to handle ngrok-specific headers
+# Add middleware to handle ngrok-specific headers and security
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next):
+async def security_middleware(request: Request, call_next):
+    # Request size limiting (50MB)
+    if request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > Config.MAX_FILE_SIZE:
+            return Response("Request too large", status_code=413)
+    
+    # Authentication for API endpoints (skip main page and static files)
+    if not (request.url.path.startswith("/static") or request.url.path in ["/", "/health"]):
+        # Check API key for protected endpoints
+        if request.url.path.startswith(("/upload", "/status", "/download", "/ws")):
+            api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+            if api_key != Config.API_KEY:
+                return Response("Unauthorized - Invalid API Key", status_code=401)
+    
     response = await call_next(request)
     
-    # Add headers that help with ngrok and security
+    # Add security headers
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -118,11 +146,14 @@ async def main_page(request: Request):
         "max_size_mb": Config.MAX_FILE_SIZE // (1024*1024),
         "whisper_model": Config.WHISPER_MODEL,
         "llm_model_name": llm_model_name,
-        "llm_model_description": llm_model_description
+        "llm_model_description": llm_model_description,
+        "api_key": Config.API_KEY  # Pass API key to template for JavaScript
     })
 
 @app.post("/upload")
+@limiter.limit("3/minute")  # Rate limit: 3 uploads per minute per IP
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("auto"),
     summary_length: str = Form("medium")

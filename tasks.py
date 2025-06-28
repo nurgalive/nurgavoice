@@ -37,7 +37,8 @@ def load_whisper_model():
     if whisper_model is None:
         try:
             device = "cuda" if os.system("nvidia-smi") == 0 else "cpu"
-            compute_type = "int8" if device == "cuda" else "int8"
+            print(f"Running Whisper model on: {device}")
+            compute_type = "float16" if device == "cuda" else "int8"
             whisper_model = whisperx.load_model(
                 Config.WHISPER_MODEL, device, compute_type=compute_type
             )
@@ -66,23 +67,63 @@ def load_llama_model(model_name: str | None = None):
     if llm_model is None and os.path.exists(model_path):
         try:
             print(f"Loading LLM model from: {model_path}")
+            
+            # Detect GPU availability
+            gpu_layers = 0
+            try:
+                import GPUtil
+                gpus = GPUtil.getGPUs()
+                if gpus:
+                    print(f"🎮 GPU detected: {gpus[0].name} (Memory: {gpus[0].memoryTotal}MB)")
+                    # Use GPU layers based on available VRAM
+                    if gpus[0].memoryTotal > 8000:  # > 8GB VRAM
+                        gpu_layers = -1  # Use all layers on GPU
+                        print("🚀 Using ALL layers on GPU (high VRAM)")
+                    elif gpus[0].memoryTotal > 4000:  # > 4GB VRAM
+                        gpu_layers = 20  # Use partial layers
+                        print("🚀 Using 20 layers on GPU (medium VRAM)")
+                    else:
+                        gpu_layers = 10  # Use fewer layers
+                        print("🚀 Using 10 layers on GPU (low VRAM)")
+                else:
+                    print("💻 No GPU detected, using CPU only")
+            except ImportError:
+                # Try alternative GPU detection
+                try:
+                    result = subprocess.run(["nvidia-smi"], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print("🎮 NVIDIA GPU detected via nvidia-smi")
+                        gpu_layers = 20  # Conservative default
+                        print("🚀 Using 20 layers on GPU")
+                    else:
+                        print("💻 No NVIDIA GPU detected, using CPU only")
+                except FileNotFoundError:
+                    print("💻 nvidia-smi not found, using CPU only")
+            
             llm_model = Llama(
                 model_path=model_path,
                 n_ctx=context_size,
                 n_threads=threads,
-                verbose=False,
+                n_gpu_layers=gpu_layers,  # Enable GPU acceleration
+                # verbose=True,  # Enable verbose to see GPU usage
                 # Additional optimizations
                 n_batch=512,  # Batch size for processing
                 use_mmap=True,  # Use memory mapping for faster loading
                 use_mlock=False,  # Don't lock model in RAM (allows swapping)
             )
-            print(f"Successfully loaded LLM model with {context_size} context size")
+            
+            if gpu_layers > 0:
+                print(f"✅ Successfully loaded LLM model with {gpu_layers} GPU layers")
+            else:
+                print(f"✅ Successfully loaded LLM model on CPU only")
+            print(f"📊 Context size: {context_size}")
+            
         except Exception as e:
-            print(f"Error loading LLM model: {e}")
+            print(f"❌ Error loading LLM model: {e}")
             print(f"Make sure the model file exists at: {model_path}")
             print("You can download models from: https://huggingface.co/models")
     elif not os.path.exists(model_path):
-        print(f"LLM model not found at: {model_path}")
+        print(f"❌ LLM model not found at: {model_path}")
         print("Please download a compatible model file.")
     
     return llm_model
@@ -130,6 +171,19 @@ def generate_summary(text: str, length: str = "medium") -> str:
     prompt = prompts.get(length, prompts["medium"])
 
     try:
+        print("🧠 Starting LLM inference...")
+        # Check GPU memory before inference
+        try:
+            result = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                memory_info = result.stdout.strip().split('\n')[0].split(', ')
+                used_mb = int(memory_info[0])
+                total_mb = int(memory_info[1])
+                print(f"🎮 GPU Memory before inference: {used_mb}MB / {total_mb}MB ({used_mb/total_mb*100:.1f}%)")
+        except Exception:
+            pass
+        
         response = llama(
             prompt,
             max_tokens=512 if length == "long" else 256,
@@ -137,6 +191,21 @@ def generate_summary(text: str, length: str = "medium") -> str:
             stop=["<end_of_turn>", "<start_of_turn>"],
             stream=False  # Ensure we get a complete response, not a stream
         )
+        
+        # Check GPU memory after inference
+        try:
+            result = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                memory_info = result.stdout.strip().split('\n')[0].split(', ')
+                used_mb = int(memory_info[0])
+                total_mb = int(memory_info[1])
+                print(f"🎮 GPU Memory after inference: {used_mb}MB / {total_mb}MB ({used_mb/total_mb*100:.1f}%)")
+        except Exception:
+            pass
+        
+        print("✅ LLM inference completed")
+        
         # Handle the response correctly based on llama-cpp-python structure
         if isinstance(response, dict) and "choices" in response:
             return response["choices"][0]["text"].strip()
