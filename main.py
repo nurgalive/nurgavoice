@@ -14,7 +14,10 @@ from config import Config
 import asyncio
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -24,6 +27,92 @@ app = FastAPI(title="Audio/Video Transcription & Summarization", version="1.0.0"
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+def setup_unicode_fonts():
+    """Setup Unicode fonts for PDF generation"""
+    try:
+        # Try to register DejaVu Sans font which supports Cyrillic
+        # This font is commonly available on Linux systems
+        font_paths = [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            '/System/Library/Fonts/Arial Unicode MS.ttf',  # macOS
+            'C:/Windows/Fonts/arial.ttf',  # Windows
+        ]
+        
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                pdfmetrics.registerFont(TTFont('Unicode', font_path))
+                return True
+                
+        # Fallback: use built-in fonts
+        print("Warning: No Unicode font found, using built-in fonts. Cyrillic characters may not display correctly.")
+        return False
+        
+    except Exception as e:
+        print(f"Warning: Could not register Unicode font: {e}")
+        return False
+
+def create_unicode_styles():
+    """Create paragraph styles with Unicode font support"""
+    styles = getSampleStyleSheet()
+    
+    # Check if Unicode font is available
+    font_available = False
+    try:
+        # Test if our Unicode font was registered
+        from reportlab.pdfbase.pdfmetrics import getFont
+        getFont('Unicode')
+        font_available = True
+    except Exception:
+        pass
+    
+    if font_available:
+        # Create custom styles with Unicode font
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        
+        title_style = ParagraphStyle(
+            'UnicodeTitle',
+            parent=styles['Title'],
+            fontName='Unicode',
+            fontSize=18,
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'UnicodeHeading1',
+            parent=styles['Heading1'],
+            fontName='Unicode',
+            fontSize=14,
+            spaceAfter=6,
+            spaceBefore=12
+        )
+        
+        normal_style = ParagraphStyle(
+            'UnicodeNormal',
+            parent=styles['Normal'],
+            fontName='Unicode',
+            fontSize=10,
+            spaceAfter=6
+        )
+        
+        return {
+            'Title': title_style,
+            'Heading1': heading_style,
+            'Normal': normal_style
+        }
+    else:
+        # Use default styles
+        return {
+            'Title': styles['Title'],
+            'Heading1': styles['Heading1'],
+            'Normal': styles['Normal']
+        }
+
+# Setup fonts on startup
+setup_unicode_fonts()
 
 # Add trusted host middleware for security
 app.add_middleware(
@@ -318,35 +407,53 @@ async def download_result(task_id: str, format: str):
         )
     
     elif format == 'pdf':
-        # Create PDF file
+        # Create PDF file with Unicode support
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
-        styles = getSampleStyleSheet()
         story = []
         
+        # Get Unicode-compatible styles
+        custom_styles = create_unicode_styles()
+        
         # Title
-        story.append(Paragraph("Transcription and Summary Report", styles['Title']))
+        story.append(Paragraph("Transcription and Summary Report", custom_styles['Title']))
         story.append(Spacer(1, 12))
         
         # Metadata
-        story.append(Paragraph("Metadata", styles['Heading1']))
-        story.append(Paragraph(f"<b>File:</b> {data['metadata']['file_name']}", styles['Normal']))
-        story.append(Paragraph(f"<b>Language:</b> {data['metadata']['language']}", styles['Normal']))
-        story.append(Paragraph(f"<b>Summary Length:</b> {data['metadata']['summary_length']}", styles['Normal']))
+        story.append(Paragraph("Metadata", custom_styles['Heading1']))
+        story.append(Paragraph(f"<b>File:</b> {data['metadata']['file_name']}", custom_styles['Normal']))
+        story.append(Paragraph(f"<b>Language:</b> {data['metadata']['language']}", custom_styles['Normal']))
+        story.append(Paragraph(f"<b>Summary Length:</b> {data['metadata']['summary_length']}", custom_styles['Normal']))
         
         if data['metadata'].get('duration'):
-            story.append(Paragraph(f"<b>Duration:</b> {data['metadata']['duration']:.2f} seconds", styles['Normal']))
+            story.append(Paragraph(f"<b>Duration:</b> {data['metadata']['duration']:.2f} seconds", custom_styles['Normal']))
         
         story.append(Spacer(1, 12))
         
         # Summary
-        story.append(Paragraph("Summary", styles['Heading1']))
-        story.append(Paragraph(data['summary'], styles['Normal']))
+        story.append(Paragraph("Summary", custom_styles['Heading1']))
+        # Escape HTML characters and handle Unicode text properly
+        summary_text = data['summary'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        story.append(Paragraph(summary_text, custom_styles['Normal']))
         story.append(Spacer(1, 12))
         
         # Transcription
-        story.append(Paragraph("Full Transcription", styles['Heading1']))
-        story.append(Paragraph(data['transcription']['text'], styles['Normal']))
+        story.append(Paragraph("Full Transcription", custom_styles['Heading1']))
+        # Escape HTML characters and handle Unicode text properly
+        transcription_text = data['transcription']['text'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        story.append(Paragraph(transcription_text, custom_styles['Normal']))
+        
+        # Add timestamped transcription if available
+        if data['transcription'].get('segments'):
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("Timestamped Transcription", custom_styles['Heading1']))
+            
+            for segment in data['transcription']['segments']:
+                start = segment.get('start', 0)
+                end = segment.get('end', 0)
+                text = segment.get('text', '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                timestamp_text = f"[{start:.2f}s - {end:.2f}s] {text}"
+                story.append(Paragraph(timestamp_text, custom_styles['Normal']))
         
         doc.build(story)
         buffer.seek(0)
