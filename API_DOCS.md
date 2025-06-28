@@ -2,7 +2,14 @@
 
 ## Overview
 
-NurgaVoice is a FastAPI-based web application that provides audio/video transcription and AI-powered summarization services. The application uses WhisperX for speech-to-text conversion and Llama.cpp for text summarization.
+NurgaVoice is an AI transcription and summarization service that focuses on using open-source models and being open source itself. Built with FastAPI, it provides audio/video transcription and AI-powered summarization services using WhisperX for speech-to-text conversion and Llama.cpp for text summarization.
+
+**Key Features:**
+
+- **Open Source**: Built with and uses only open-source AI models
+- **Self-Hosting Ready**: Designed for easy self-deployment and hosting
+- **Privacy First**: Values your privacy and does not store your files or logs, just like your favorite VPN provider
+- **Simple & Accessible**: No registration required - just upload and process
 
 ## Base URL
 
@@ -318,3 +325,7 @@ The application uses the following models by default:
 - Use the `/health` endpoint for health checks
 - Monitor Celery workers for background task processing
 - Check Redis connection for task queue status
+
+## Disclaimer
+
+This project uses AI and is in the research stage and can produce mistakes and incorrect results. Please review and verify all transcriptions and summaries before relying on them for important decisions or applications.
