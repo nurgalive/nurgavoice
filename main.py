@@ -141,7 +141,8 @@ async def main_page(request: Request):
     
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "languages": Config.SUPPORTED_LANGUAGES,
+        "languages": Config.SUPPORTED_LANGUAGES,  # For form dropdown
+        "language_names": Config.LANGUAGE_NAMES,  # For display mapping
         "summary_lengths": Config.SUMMARY_LENGTHS,
         "max_size_mb": Config.MAX_FILE_SIZE // (1024*1024),
         "whisper_model": Config.WHISPER_MODEL,

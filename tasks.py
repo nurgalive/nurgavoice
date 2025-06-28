@@ -256,6 +256,17 @@ def transcribe_and_summarize(
             transcribe_options["language"] = language
 
         result = model.transcribe(audio, batch_size=16, **transcribe_options)
+        
+        # Extract language - WhisperX should return it in the result dict
+        detected_language = 'unknown'
+        if isinstance(result, dict):
+            detected_language = result.get('language', 'unknown')
+            
+        print(f"Whisper detected language: {detected_language}")
+        
+        # Ensure we have a valid language code
+        if not detected_language or detected_language == 'None' or detected_language is None:
+            detected_language = 'unknown'
 
         # Align transcript (for better timestamps)
         self.update_state(
@@ -263,11 +274,14 @@ def transcribe_and_summarize(
         )
         try:
             model_a, metadata = whisperx.load_align_model(
-                language_code=result["language"], device=model.device
+                language_code=detected_language, device=model.device
             )
-            result = whisperx.align(
+            aligned_result = whisperx.align(
                 result["segments"], model_a, metadata, audio, str(model.device)
             )
+            # Update result with aligned segments, but preserve the original language info
+            result["segments"] = aligned_result["segments"] if "segments" in aligned_result else aligned_result
+            print(f"Alignment completed, preserved language: {detected_language}")
         except Exception as e:
             print(f"Alignment failed: {e}")
             # Continue without alignment
@@ -288,12 +302,12 @@ def transcribe_and_summarize(
             "transcription": {
                 "text": full_text,
                 "segments": result["segments"],
-                "language": result.get("language", "unknown"),
+                "language": detected_language,
             },
             "summary": summary,
             "metadata": {
                 "file_name": Path(file_path).name,
-                "language": result.get("language", "unknown"),
+                "language": detected_language,
                 "summary_length": summary_length,
                 "duration": len(audio) / 16000 if audio is not None else None,
             },

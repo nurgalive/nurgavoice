@@ -389,11 +389,16 @@ class NurgaVoiceApp {
         }
         
         if (metadata.language) {
+            // Get the full language name from the mappings, fallback to uppercase code
+            const languageName = window.CONFIG.LANGUAGES && window.CONFIG.LANGUAGES[metadata.language] 
+                ? window.CONFIG.LANGUAGES[metadata.language] 
+                : metadata.language.toUpperCase();
+            
             metadataHtml += `
                 <div class="col-md-3 mb-2">
                     <div class="metadata-item">
                         <div class="metadata-label">Language</div>
-                        <div>${metadata.language.toUpperCase()}</div>
+                        <div>${languageName}</div>
                     </div>
                 </div>
             `;

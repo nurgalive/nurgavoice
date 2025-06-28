@@ -254,7 +254,8 @@
         // Global configuration for JavaScript
         window.CONFIG = {
             API_KEY: "{{ api_key }}",
-            MAX_FILE_SIZE_MB: {{ max_size_mb }}
+            MAX_FILE_SIZE_MB: {{ max_size_mb }},
+            LANGUAGES: {{ language_names|tojson }}
         };
     </script>
     <script src="/static/js/app.js"></script>
