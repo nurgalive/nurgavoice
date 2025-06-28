@@ -125,8 +125,20 @@
                     </div>
                     <div class="card-body">
                         <div id="progressSection" style="display: none;">
-                            <div class="mb-3">
-                                <label for="progressBar" class="form-label">Progress</label>
+                            <!-- Upload Progress Bar -->
+                            <div class="mb-3" id="uploadProgressSection" style="display: none;">
+                                <label for="uploadProgressBar" class="form-label">Upload Progress</label>
+                                <div class="progress">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" 
+                                         id="uploadProgressBar" role="progressbar" style="width: 0%">
+                                        0%
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Processing Progress Bar -->
+                            <div class="mb-3" id="processingProgressSection">
+                                <label for="progressBar" class="form-label">Processing Progress</label>
                                 <div class="progress">
                                     <div class="progress-bar progress-bar-striped progress-bar-animated" 
                                          id="progressBar" role="progressbar" style="width: 0%">

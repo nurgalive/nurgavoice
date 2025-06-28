@@ -18,6 +18,9 @@ class NurgaVoiceApp {
         
         // Progress elements
         this.progressSection = document.getElementById('progressSection');
+        this.uploadProgressSection = document.getElementById('uploadProgressSection');
+        this.uploadProgressBar = document.getElementById('uploadProgressBar');
+        this.processingProgressSection = document.getElementById('processingProgressSection');
         this.progressBar = document.getElementById('progressBar');
         this.statusMessage = document.getElementById('statusMessage');
         this.uploadPrompt = document.getElementById('uploadPrompt');
@@ -97,58 +100,90 @@ class NurgaVoiceApp {
         
         this.startProcessing(file.name);
 
-        try {
-            console.log('Making fetch request to /upload...');
-            const response = await fetch('/upload', {
-                method: 'POST',
-                headers: {
-                    'X-API-Key': window.CONFIG.API_KEY
-                },
-                body: formData
-            });
-
-            console.log('Response received:', response.status, response.statusText);
-
-            if (!response.ok) {
-                // Try to get error details from response
-                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.detail || errorMessage;
-                } catch (parseError) {
-                    // If we can't parse JSON, use the text response
-                    try {
-                        const errorText = await response.text();
-                        if (errorText) {
-                            errorMessage = errorText;
-                        }
-                    } catch (textError) {
-                        // Keep the original HTTP error message
-                    }
+        // Use XMLHttpRequest for upload progress tracking
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            
+            // Track upload progress
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const uploadPercent = Math.round((e.loaded / e.total) * 100);
+                    this.updateUploadProgress(uploadPercent);
                 }
-                throw new Error(errorMessage);
-            }
-
-            const data = await response.json();
-            console.log('Upload successful, task ID:', data.task_id);
+            });
             
-            this.currentTaskId = data.task_id;
-            this.connectWebSocket();
+            // Handle upload completion
+            xhr.upload.addEventListener('load', () => {
+                this.updateUploadProgress(100);
+                this.hideUploadProgress();
+                console.log('Upload completed, waiting for server response...');
+            });
             
-        } catch (error) {
-            console.error('Upload error:', error);
-            this.stopProcessing();
+            // Handle response
+            xhr.addEventListener('load', () => {
+                try {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const data = JSON.parse(xhr.responseText);
+                        console.log('Upload successful, task ID:', data.task_id);
+                        
+                        this.currentTaskId = data.task_id;
+                        this.connectWebSocket();
+                        resolve(data);
+                    } else {
+                        // Try to get error details from response
+                        let errorMessage = `HTTP ${xhr.status}: ${xhr.statusText}`;
+                        try {
+                            const errorData = JSON.parse(xhr.responseText);
+                            errorMessage = errorData.detail || errorMessage;
+                        } catch (parseError) {
+                            // If we can't parse JSON, use the response text
+                            if (xhr.responseText) {
+                                errorMessage = xhr.responseText;
+                            }
+                        }
+                        throw new Error(errorMessage);
+                    }
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    this.stopProcessing();
+                    
+                    // Provide more specific error messages
+                    let errorMessage = error.message;
+                    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                        errorMessage = 'Network error: Unable to connect to server. Please check your internet connection.';
+                    } else if (error.message.includes('insecure') || error.message.includes('mixed content')) {
+                        errorMessage = 'Security error: Mixed content detected. This may be due to HTTPS/HTTP protocol mismatch.';
+                    }
+                    
+                    this.showError(`Upload failed: ${errorMessage}`);
+                    reject(error);
+                }
+            });
             
-            // Provide more specific error messages
-            let errorMessage = error.message;
-            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                errorMessage = 'Network error: Unable to connect to server. Please check your internet connection.';
-            } else if (error.message.includes('insecure') || error.message.includes('mixed content')) {
-                errorMessage = 'Security error: Mixed content detected. This may be due to HTTPS/HTTP protocol mismatch.';
-            }
+            // Handle network errors
+            xhr.addEventListener('error', () => {
+                console.error('Network error during upload');
+                this.stopProcessing();
+                this.showError('Network error: Unable to connect to server. Please check your internet connection.');
+                reject(new Error('Network error'));
+            });
             
-            this.showError(`Upload failed: ${errorMessage}`);
-        }
+            // Handle timeout
+            xhr.addEventListener('timeout', () => {
+                console.error('Upload timeout');
+                this.stopProcessing();
+                this.showError('Upload timeout: The file upload took too long. Please try again with a smaller file.');
+                reject(new Error('Upload timeout'));
+            });
+            
+            // Set up the request
+            xhr.open('POST', '/upload');
+            xhr.setRequestHeader('X-API-Key', window.CONFIG.API_KEY);
+            xhr.timeout = 300000; // 5 minutes timeout
+            
+            // Start the upload
+            xhr.send(formData);
+        });
     }
 
     startProcessing(filename) {
@@ -160,20 +195,46 @@ class NurgaVoiceApp {
         // Update UI
         this.uploadPrompt.style.display = 'none';
         this.progressSection.style.display = 'block';
+        this.uploadProgressSection.style.display = 'block';
+        this.processingProgressSection.style.display = 'block';
         this.fileInfo.style.display = 'block';
         this.completionInfo.style.display = 'none';
         this.fileName.textContent = filename;
         
         // Disable upload button
         this.uploadBtn.disabled = true;
-        this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+        this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
         
-        // Reset progress
-        this.updateProgress(0, 'Starting upload...');
+        // Reset progress bars
+        this.updateUploadProgress(0);
+        this.updateProgress(0, 'Preparing upload...');
         
         // Reset progress bar styling
         this.progressBar.classList.remove('bg-success');
         this.progressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+        this.uploadProgressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+    }
+
+    updateUploadProgress(progress) {
+        if (this.uploadProgressBar) {
+            this.uploadProgressBar.style.width = `${progress}%`;
+            this.uploadProgressBar.textContent = `${progress}%`;
+            
+            if (progress >= 100) {
+                this.uploadProgressBar.classList.remove('progress-bar-animated');
+                this.uploadProgressBar.classList.add('bg-success');
+                // Update button text when upload completes
+                this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+            }
+        }
+    }
+
+    hideUploadProgress() {
+        setTimeout(() => {
+            if (this.uploadProgressSection) {
+                this.uploadProgressSection.style.display = 'none';
+            }
+        }, 2000); // Hide after 2 seconds to show completion
     }
 
     stopProcessing() {
@@ -182,6 +243,11 @@ class NurgaVoiceApp {
         // Re-enable upload button
         this.uploadBtn.disabled = false;
         this.uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload & Process';
+        
+        // Hide upload progress section
+        if (this.uploadProgressSection) {
+            this.uploadProgressSection.style.display = 'none';
+        }
         
         // Close websocket
         if (this.websocket) {
@@ -192,6 +258,9 @@ class NurgaVoiceApp {
 
     connectWebSocket() {
         if (!this.currentTaskId) return;
+
+        // Update UI to show we're starting processing
+        this.updateProgress(10, 'Starting processing...');
 
         // Check if we're running through ngrok
         const isNgrok = window.location.hostname.includes('ngrok');
@@ -299,7 +368,7 @@ class NurgaVoiceApp {
         this.progressBar.textContent = `${progress}%`;
         this.statusMessage.textContent = message;
         
-        // Add animation class
+        // Add animation class for processing
         if (progress < 100) {
             this.progressBar.classList.add('progress-bar-animated');
         } else {

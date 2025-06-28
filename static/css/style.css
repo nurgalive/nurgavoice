@@ -100,6 +100,37 @@ body {
     background-color: #0b5ed7;
 }
 
+/* Upload Progress Bar Styling */
+#uploadProgressSection {
+    margin-bottom: 1rem;
+}
+
+#uploadProgressSection .progress-bar {
+    background-color: #17a2b8; /* Info color for upload */
+    transition: width 0.3s ease;
+}
+
+#processingProgressSection .progress-bar {
+    background-color: #007bff; /* Primary color for processing */
+    transition: width 0.3s ease;
+}
+
+/* Upload progress bar completion styling */
+#uploadProgressBar.bg-success {
+    background-color: #28a745 !important;
+}
+
+/* Progress sections spacing */
+.progress-section {
+    margin-bottom: 1rem;
+}
+
+.progress-section .form-label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
 /* Progress animations */
 @keyframes pulse {
     0% {
