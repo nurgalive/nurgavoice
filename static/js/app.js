@@ -59,7 +59,33 @@ class NurgaVoiceApp {
         this.enableSummary.addEventListener('change', (e) => this.handleSummaryToggle(e));
     }
 
-    handleFileSelect(event) {
+    // Get audio duration from file
+    getAudioDuration(file) {
+        return new Promise((resolve, reject) => {
+            const audio = document.createElement('audio');
+            const url = URL.createObjectURL(file);
+            
+            audio.addEventListener('loadedmetadata', () => {
+                URL.revokeObjectURL(url);
+                resolve(audio.duration);
+            });
+            
+            audio.addEventListener('error', () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Could not load audio file'));
+            });
+            
+            // Set timeout to prevent hanging
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Timeout loading audio metadata'));
+            }, 10000);
+            
+            audio.src = url;
+        });
+    }
+
+    async handleFileSelect(event) {
         const file = event.target.files[0];
         if (file) {
             // Validate file size
@@ -78,6 +104,24 @@ class NurgaVoiceApp {
                 this.showError('Unsupported file format. Please use MP3, WAV, MP4, AVI, M4A, FLAC, or OGG.');
                 this.fileInput.value = '';
                 return;
+            }
+
+            // Check audio duration and automatically disable summary if too short
+            try {
+                const duration = await this.getAudioDuration(file);
+                console.log('Audio duration:', duration, 'seconds');
+                
+                if (duration < 30) {
+                    // Auto-disable summary for short audio files
+                    this.enableSummary.checked = false;
+                    this.handleSummaryToggle({ target: { checked: false } });
+                    
+                    // Show a brief message to inform the user
+                    this.showInfo(`Audio is ${Math.round(duration)} seconds. Summary disabled for files shorter than 30 seconds.`);
+                }
+            } catch (error) {
+                console.warn('Could not determine audio duration:', error.message);
+                // Continue without duration check if we can't determine it
             }
 
             this.hideError();
@@ -221,6 +265,7 @@ class NurgaVoiceApp {
         this.isProcessing = true;
         this.processingStartTime = new Date();
         this.hideError();
+        this.hideInfo();
         this.hideResults();
         
         // Update UI
@@ -446,7 +491,21 @@ class NurgaVoiceApp {
         
         // Display summary with fallback and handle disabled summary
         if (result && result.metadata && result.metadata.summary_enabled === false) {
-            this.summaryContent.innerHTML = '<div class="summary-disabled"><i class="fas fa-info-circle me-2"></i>Summary generation was disabled for this transcription.</div>';
+            let summaryMessage = 'Summary generation was disabled for this transcription.';
+            let iconClass = 'fas fa-info-circle';
+            let messageClass = 'summary-disabled';
+            
+            // Check if it was auto-disabled due to short audio
+            if (result.metadata.auto_disabled_reason) {
+                summaryMessage = `Summary was automatically disabled: ${result.metadata.auto_disabled_reason}`;
+                iconClass = 'fas fa-clock';
+                messageClass = 'summary-auto-disabled';
+            } else if (result.metadata.summary_requested === true) {
+                // User requested summary but it was disabled for another reason
+                summaryMessage = 'Summary generation was disabled during processing.';
+            }
+            
+            this.summaryContent.innerHTML = `<div class="${messageClass}"><i class="${iconClass} me-2"></i>${summaryMessage}</div>`;
         } else if (result && result.summary) {
             this.summaryContent.textContent = result.summary;
         } else {
@@ -517,11 +576,23 @@ class NurgaVoiceApp {
                     </div>
                 `;
             } else if (!metadata.summary_enabled) {
+                let summaryStatusText = "Disabled";
+                let summaryStatusClass = "text-muted";
+                
+                // Check if it was auto-disabled
+                if (metadata.auto_disabled_reason) {
+                    summaryStatusText = `Auto-disabled (${metadata.auto_disabled_reason})`;
+                    summaryStatusClass = "text-warning";
+                } else if (metadata.summary_requested === true) {
+                    summaryStatusText = "Disabled during processing";
+                    summaryStatusClass = "text-info";
+                }
+                
                 metadataHtml += `
                     <div class="col-md-3 mb-2">
                         <div class="metadata-item">
                             <div class="metadata-label">Summary</div>
-                            <div class="text-muted">Disabled</div>
+                            <div class="${summaryStatusClass}">${summaryStatusText}</div>
                         </div>
                     </div>
                 `;
@@ -597,13 +668,64 @@ class NurgaVoiceApp {
     }
 
     showError(message) {
+        this.hideInfo(); // Hide info messages when showing error
         this.errorMessage.textContent = message;
         this.errorSection.style.display = 'block';
         this.errorSection.scrollIntoView({ behavior: 'smooth' });
     }
 
+    showInfo(message) {
+        // Create a temporary info message element if it doesn't exist
+        let infoSection = document.getElementById('infoSection');
+        if (!infoSection) {
+            infoSection = document.createElement('div');
+            infoSection.id = 'infoSection';
+            infoSection.className = 'alert alert-info alert-dismissible fade show mt-3';
+            infoSection.innerHTML = `
+                <span id="infoMessage"></span>
+                <button type="button" class="btn-close" aria-label="Close"></button>
+            `;
+            
+            // Insert after error section or at the beginning of the form
+            const errorSection = this.errorSection;
+            if (errorSection && errorSection.parentNode) {
+                errorSection.parentNode.insertBefore(infoSection, errorSection.nextSibling);
+            } else {
+                const uploadForm = this.uploadForm;
+                if (uploadForm && uploadForm.parentNode) {
+                    uploadForm.parentNode.insertBefore(infoSection, uploadForm);
+                }
+            }
+            
+            // Add click handler for close button
+            const closeBtn = infoSection.querySelector('.btn-close');
+            closeBtn.addEventListener('click', () => {
+                this.hideInfo();
+            });
+        }
+        
+        const infoMessage = document.getElementById('infoMessage');
+        if (infoMessage) {
+            infoMessage.textContent = message;
+        }
+        infoSection.style.display = 'block';
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            this.hideInfo();
+        }, 5000);
+    }
+
+    hideInfo() {
+        const infoSection = document.getElementById('infoSection');
+        if (infoSection) {
+            infoSection.style.display = 'none';
+        }
+    }
+
     hideError() {
         this.errorSection.style.display = 'none';
+        this.hideInfo(); // Also hide info messages
     }
 
     hideResults() {

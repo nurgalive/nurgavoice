@@ -115,7 +115,7 @@ def load_llama_model(model_name: str | None = None):
             if gpu_layers > 0:
                 print(f"✅ Successfully loaded LLM model with {gpu_layers} GPU layers")
             else:
-                print(f"✅ Successfully loaded LLM model on CPU only")
+                print("✅ Successfully loaded LLM model on CPU only")
             print(f"📊 Context size: {context_size}")
             
         except Exception as e:
@@ -289,6 +289,16 @@ def transcribe_and_summarize(
         # Extract text and segments
         full_text = " ".join([segment["text"] for segment in result["segments"]])
 
+        # Calculate audio duration
+        audio_duration = len(audio) / 16000 if audio is not None else None
+        
+        # Backend check: Auto-disable summary for audio shorter than 30 seconds
+        original_enable_summary = enable_summary
+        if audio_duration is not None and audio_duration < 30:
+            if enable_summary:
+                print(f"⚠️  Audio duration ({audio_duration:.1f}s) is shorter than 30 seconds. Auto-disabling summary generation.")
+            enable_summary = False
+
         # Generate summary (conditional)
         if enable_summary:
             self.update_state(
@@ -296,10 +306,16 @@ def transcribe_and_summarize(
             )
             summary = generate_summary(full_text, summary_length)
         else:
-            self.update_state(
-                state="PROGRESS", meta={"step": "Skipping summary (disabled)", "progress": 80}
-            )
-            summary = "Summary generation was disabled by user."
+            if original_enable_summary and audio_duration is not None and audio_duration < 30:
+                self.update_state(
+                    state="PROGRESS", meta={"step": "Skipping summary (audio too short)", "progress": 80}
+                )
+                summary = f"Summary generation was automatically disabled because the audio is only {audio_duration:.1f} seconds long (minimum 30 seconds required)."
+            else:
+                self.update_state(
+                    state="PROGRESS", meta={"step": "Skipping summary (disabled)", "progress": 80}
+                )
+                summary = "Summary generation was disabled by user."
 
         # Prepare result
         self.update_state(state="PROGRESS", meta={"step": "Finalizing", "progress": 90})
@@ -315,8 +331,10 @@ def transcribe_and_summarize(
                 "file_name": Path(file_path).name,
                 "language": detected_language,
                 "summary_length": summary_length,
-                "summary_enabled": enable_summary,
-                "duration": len(audio) / 16000 if audio is not None else None,
+                "summary_enabled": enable_summary,  # This now reflects the actual status after backend checks
+                "summary_requested": original_enable_summary,  # This shows what the user originally requested
+                "duration": audio_duration,
+                "auto_disabled_reason": "Audio too short (< 30 seconds)" if original_enable_summary and not enable_summary and audio_duration is not None and audio_duration < 30 else None,
             },
         }
 
