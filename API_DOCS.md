@@ -172,7 +172,7 @@ Download the transcription and summary results.
 
 **Parameters:**
 - `task_id` (path, required): Task ID
-- `format` (path, required): Download format ("txt" or "pdf")
+- `format` (path, required): Download format ("txt", "md", or "pdf")
 
 **Response:** File download
 
@@ -215,7 +215,14 @@ curl "http://localhost:8000/status/your-task-id"
 
 **Download results:**
 ```bash
+# Download as text
 curl -O "http://localhost:8000/download/your-task-id/txt"
+
+# Download as markdown
+curl -O "http://localhost:8000/download/your-task-id/md"
+
+# Download as PDF
+curl -O "http://localhost:8000/download/your-task-id/pdf"
 ```
 
 ### Python Example
@@ -251,6 +258,11 @@ while True:
 pdf_response = requests.get(f'http://localhost:8000/download/{task_id}/pdf')
 with open('results.pdf', 'wb') as f:
     f.write(pdf_response.content)
+
+# Download as markdown
+md_response = requests.get(f'http://localhost:8000/download/{task_id}/md')
+with open('results.md', 'wb') as f:
+    f.write(md_response.content)
 ```
 
 ### JavaScript Example

@@ -366,8 +366,8 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
 @app.get("/download/{task_id}/{format}")
 async def download_result(task_id: str, format: str):
     """Download transcription results"""
-    if format not in ['txt', 'pdf']:
-        raise HTTPException(status_code=400, detail="Format must be 'txt' or 'pdf'")
+    if format not in ['txt', 'pdf', 'md']:
+        raise HTTPException(status_code=400, detail="Format must be 'txt', 'pdf', or 'md'")
     
     result_file = os.path.join(Config.RESULTS_DIR, f"{task_id}.json")
     if not os.path.exists(result_file):
@@ -417,6 +417,55 @@ async def download_result(task_id: str, format: str):
             file_path, 
             filename=filename,
             media_type='text/plain'
+        )
+    
+    elif format == 'md':
+        # Create Markdown file
+        content = "# Transcription and Summary Report\n\n"
+        
+        # Metadata section
+        content += "## Metadata\n\n"
+        content += f"- **File:** {data['metadata']['file_name']}\n"
+        content += f"- **Language:** {data['metadata']['language']}\n"
+        
+        if data['metadata'].get('summary_enabled', True):
+            content += f"- **Summary Length:** {data['metadata']['summary_length']}\n"
+        else:
+            content += "- **Summary:** Disabled\n"
+        
+        if data['metadata'].get('duration'):
+            content += f"- **Duration:** {data['metadata']['duration']:.2f} seconds\n"
+        
+        content += "\n---\n\n"
+        
+        # Summary section (conditional)
+        if data['metadata'].get('summary_enabled', True):
+            content += "## Summary\n\n"
+            content += data['summary'] + "\n\n---\n\n"
+        
+        # Transcription section
+        content += "## Full Transcription\n\n"
+        content += data['transcription']['text'] + "\n\n"
+        
+        # Timestamped transcription if available
+        if data['transcription'].get('segments'):
+            content += "## Timestamped Transcription\n\n"
+            for segment in data['transcription']['segments']:
+                start = segment.get('start', 0)
+                end = segment.get('end', 0)
+                text = segment.get('text', '')
+                content += f"**[{start:.2f}s - {end:.2f}s]** {text}\n\n"
+        
+        filename = f"transcription_{task_id}.md"
+        file_path = os.path.join(Config.RESULTS_DIR, filename)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return FileResponse(
+            file_path, 
+            filename=filename,
+            media_type='text/markdown'
         )
     
     elif format == 'pdf':

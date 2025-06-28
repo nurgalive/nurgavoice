@@ -40,6 +40,7 @@ class NurgaVoiceApp {
         
         // Download elements
         this.downloadTxt = document.getElementById('downloadTxt');
+        this.downloadMd = document.getElementById('downloadMd');
         this.downloadPdf = document.getElementById('downloadPdf');
         
         // Error elements
@@ -54,6 +55,7 @@ class NurgaVoiceApp {
     bindEvents() {
         this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
         this.downloadTxt.addEventListener('click', () => this.downloadFile('txt'));
+        this.downloadMd.addEventListener('click', () => this.downloadFile('md'));
         this.downloadPdf.addEventListener('click', () => this.downloadFile('pdf'));
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         this.enableSummary.addEventListener('change', (e) => this.handleSummaryToggle(e));
