@@ -246,10 +246,14 @@ async def upload_file(
     request: Request,
     file: UploadFile = File(...),
     language: str = Form("auto"),
-    summary_length: str = Form("medium")
+    summary_length: str = Form("medium"),
+    enable_summary: str = Form("true")
 ):
     """Upload file and start transcription task"""
     validate_file(file)
+    
+    # Convert string to boolean
+    enable_summary_bool = enable_summary.lower() in ('true', '1', 'yes', 'on')
     
     # Generate unique task ID
     task_id = str(uuid.uuid4())
@@ -263,7 +267,7 @@ async def upload_file(
             await f.write(content)
         
         # Start transcription task
-        task = transcribe_and_summarize.delay(file_path, language, summary_length)
+        task = transcribe_and_summarize.delay(file_path, language, summary_length, enable_summary_bool)
         
         return {
             "task_id": task.id,
@@ -289,7 +293,8 @@ async def upload_info():
         "expected_fields": {
             "file": "Audio/video file to transcribe",
             "language": "Language code (optional, default: 'auto')",
-            "summary_length": "Summary length (optional, default: 'medium')"
+            "summary_length": "Summary length (optional, default: 'medium')",
+            "enable_summary": "Enable AI summarization (optional, default: true)"
         },
         "supported_formats": list(Config.ALLOWED_EXTENSIONS),
         "max_file_size_mb": Config.MAX_FILE_SIZE // (1024*1024),
@@ -375,12 +380,20 @@ async def download_result(task_id: str, format: str):
         # Create TXT file
         content = f"TRANSCRIPTION\n{'='*50}\n\n"
         content += data['transcription']['text'] + "\n\n"
-        content += f"SUMMARY\n{'='*50}\n\n"
-        content += data['summary'] + "\n\n"
+        
+        # Only include summary if it was enabled
+        if data['metadata'].get('summary_enabled', True):
+            content += f"SUMMARY\n{'='*50}\n\n"
+            content += data['summary'] + "\n\n"
+        
         content += f"METADATA\n{'='*50}\n\n"
         content += f"File: {data['metadata']['file_name']}\n"
         content += f"Language: {data['metadata']['language']}\n"
-        content += f"Summary Length: {data['metadata']['summary_length']}\n"
+        
+        if data['metadata'].get('summary_enabled', True):
+            content += f"Summary Length: {data['metadata']['summary_length']}\n"
+        else:
+            content += "Summary: Disabled\n"
         
         if data['metadata'].get('duration'):
             content += f"Duration: {data['metadata']['duration']:.2f} seconds\n"
@@ -423,19 +436,24 @@ async def download_result(task_id: str, format: str):
         story.append(Paragraph("Metadata", custom_styles['Heading1']))
         story.append(Paragraph(f"<b>File:</b> {data['metadata']['file_name']}", custom_styles['Normal']))
         story.append(Paragraph(f"<b>Language:</b> {data['metadata']['language']}", custom_styles['Normal']))
-        story.append(Paragraph(f"<b>Summary Length:</b> {data['metadata']['summary_length']}", custom_styles['Normal']))
+        
+        if data['metadata'].get('summary_enabled', True):
+            story.append(Paragraph(f"<b>Summary Length:</b> {data['metadata']['summary_length']}", custom_styles['Normal']))
+        else:
+            story.append(Paragraph("<b>Summary:</b> Disabled", custom_styles['Normal']))
         
         if data['metadata'].get('duration'):
             story.append(Paragraph(f"<b>Duration:</b> {data['metadata']['duration']:.2f} seconds", custom_styles['Normal']))
         
         story.append(Spacer(1, 12))
         
-        # Summary
-        story.append(Paragraph("Summary", custom_styles['Heading1']))
-        # Escape HTML characters and handle Unicode text properly
-        summary_text = data['summary'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        story.append(Paragraph(summary_text, custom_styles['Normal']))
-        story.append(Spacer(1, 12))
+        # Summary (conditional)
+        if data['metadata'].get('summary_enabled', True):
+            story.append(Paragraph("Summary", custom_styles['Heading1']))
+            # Escape HTML characters and handle Unicode text properly
+            summary_text = data['summary'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            story.append(Paragraph(summary_text, custom_styles['Normal']))
+            story.append(Spacer(1, 12))
         
         # Transcription
         story.append(Paragraph("Full Transcription", custom_styles['Heading1']))

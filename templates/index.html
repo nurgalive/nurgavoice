@@ -97,6 +97,16 @@
                             </div>
 
                             <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="enableSummary" name="enable_summary" checked>
+                                    <label class="form-check-label" for="enableSummary">
+                                        <i class="fas fa-file-alt me-1"></i>Generate Summary
+                                    </label>
+                                </div>
+                                <small class="form-text text-muted">Toggle to enable/disable AI-powered text summarization</small>
+                            </div>
+
+                            <div class="mb-3" id="summaryOptionsDiv">
                                 <label for="summaryLengthSelect" class="form-label">Summary Length</label>
                                 <select class="form-select" id="summaryLengthSelect" name="summary_length">
                                     {% for code, name in summary_lengths.items() %}

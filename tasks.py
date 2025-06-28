@@ -217,7 +217,7 @@ def generate_summary(text: str, length: str = "medium") -> str:
 
 @celery_app.task(bind=True)
 def transcribe_and_summarize(
-    self, file_path: str, language: str = "auto", summary_length: str = "medium"
+    self, file_path: str, language: str = "auto", summary_length: str = "medium", enable_summary: bool = True
 ) -> Dict[str, Any]:
     """Main task for transcription and summarization"""
     try:
@@ -289,11 +289,17 @@ def transcribe_and_summarize(
         # Extract text and segments
         full_text = " ".join([segment["text"] for segment in result["segments"]])
 
-        # Generate summary
-        self.update_state(
-            state="PROGRESS", meta={"step": "Generating summary", "progress": 80}
-        )
-        summary = generate_summary(full_text, summary_length)
+        # Generate summary (conditional)
+        if enable_summary:
+            self.update_state(
+                state="PROGRESS", meta={"step": "Generating summary", "progress": 80}
+            )
+            summary = generate_summary(full_text, summary_length)
+        else:
+            self.update_state(
+                state="PROGRESS", meta={"step": "Skipping summary (disabled)", "progress": 80}
+            )
+            summary = "Summary generation was disabled by user."
 
         # Prepare result
         self.update_state(state="PROGRESS", meta={"step": "Finalizing", "progress": 90})
@@ -309,6 +315,7 @@ def transcribe_and_summarize(
                 "file_name": Path(file_path).name,
                 "language": detected_language,
                 "summary_length": summary_length,
+                "summary_enabled": enable_summary,
                 "duration": len(audio) / 16000 if audio is not None else None,
             },
         }

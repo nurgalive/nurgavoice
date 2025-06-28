@@ -45,6 +45,10 @@ class NurgaVoiceApp {
         // Error elements
         this.errorSection = document.getElementById('errorSection');
         this.errorMessage = document.getElementById('errorMessage');
+        
+        // Summary toggle elements
+        this.enableSummary = document.getElementById('enableSummary');
+        this.summaryOptionsDiv = document.getElementById('summaryOptionsDiv');
     }
 
     bindEvents() {
@@ -52,6 +56,7 @@ class NurgaVoiceApp {
         this.downloadTxt.addEventListener('click', () => this.downloadFile('txt'));
         this.downloadPdf.addEventListener('click', () => this.downloadFile('pdf'));
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        this.enableSummary.addEventListener('change', (e) => this.handleSummaryToggle(e));
     }
 
     handleFileSelect(event) {
@@ -79,6 +84,26 @@ class NurgaVoiceApp {
         }
     }
 
+    handleSummaryToggle(event) {
+        const summaryEnabled = event.target.checked;
+        
+        // Show/hide summary length options with smooth transition
+        if (summaryEnabled) {
+            this.summaryOptionsDiv.style.display = 'block';
+            this.summaryOptionsDiv.style.opacity = '0';
+            setTimeout(() => {
+                this.summaryOptionsDiv.style.opacity = '1';
+            }, 10);
+        } else {
+            this.summaryOptionsDiv.style.opacity = '0';
+            setTimeout(() => {
+                this.summaryOptionsDiv.style.display = 'none';
+            }, 300);
+        }
+        
+        console.log('Summary generation:', summaryEnabled ? 'enabled' : 'disabled');
+    }
+
     async handleUpload(event) {
         event.preventDefault();
         
@@ -88,6 +113,12 @@ class NurgaVoiceApp {
 
         const formData = new FormData(this.uploadForm);
         const file = formData.get('file');
+        
+        // Explicitly handle checkbox value (unchecked checkboxes are not included in FormData)
+        const enableSummaryChecked = this.enableSummary.checked;
+        formData.set('enable_summary', enableSummaryChecked.toString());
+        
+        console.log('Summary enabled:', enableSummaryChecked);
         
         if (!file || file.size === 0) {
             this.showError('Please select a file to upload.');
@@ -413,8 +444,10 @@ class NurgaVoiceApp {
         // Show results section
         this.resultsSection.style.display = 'block';
         
-        // Display summary with fallback
-        if (result && result.summary) {
+        // Display summary with fallback and handle disabled summary
+        if (result && result.metadata && result.metadata.summary_enabled === false) {
+            this.summaryContent.innerHTML = '<div class="summary-disabled"><i class="fas fa-info-circle me-2"></i>Summary generation was disabled for this transcription.</div>';
+        } else if (result && result.summary) {
             this.summaryContent.textContent = result.summary;
         } else {
             this.summaryContent.textContent = 'No summary available';
@@ -473,7 +506,28 @@ class NurgaVoiceApp {
             `;
         }
         
-        if (metadata.summary_length) {
+        if (metadata.summary_enabled !== undefined) {
+            if (metadata.summary_enabled && metadata.summary_length) {
+                metadataHtml += `
+                    <div class="col-md-3 mb-2">
+                        <div class="metadata-item">
+                            <div class="metadata-label">Summary Length</div>
+                            <div>${metadata.summary_length}</div>
+                        </div>
+                    </div>
+                `;
+            } else if (!metadata.summary_enabled) {
+                metadataHtml += `
+                    <div class="col-md-3 mb-2">
+                        <div class="metadata-item">
+                            <div class="metadata-label">Summary</div>
+                            <div class="text-muted">Disabled</div>
+                        </div>
+                    </div>
+                `;
+            }
+        } else if (metadata.summary_length) {
+            // Fallback for older results without summary_enabled field
             metadataHtml += `
                 <div class="col-md-3 mb-2">
                     <div class="metadata-item">
