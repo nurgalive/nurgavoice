@@ -24,7 +24,7 @@ class Config:
     
     # LLM model configuration (now using Gemma 3 as default)
     LLAMA_MODEL_PATH = "models/ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf"
-    LLAMA_MODEL_CONTEXT_SIZE = 8192  # Gemma 3 supports larger context
+    LLAMA_MODEL_CONTEXT_SIZE = 32768  # Gemma 3 supports larger context
     LLAMA_MODEL_THREADS = 4  # Appropriate for 1B model
     LLAMA_MODEL_MAX_TOKENS = 512  # Max tokens for generation
     

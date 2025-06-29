@@ -1,0 +1,28 @@
+# Netlify Build Configuration
+[build]
+  # Directory to publish (current directory since we're in frontend folder)
+  publish = "."
+  
+  # No build command needed for static files
+  command = "echo 'No build needed for static files'"
+
+# Redirect rules for SPA behavior
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  conditions = {Role = ["admin"], Country = ["US"]}
+
+# Headers for security and CORS
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; connect-src 'self' https: wss:; img-src 'self' data:;"
+
+# Environment variables (set these in Netlify dashboard)
+# VITE_API_BASE_URL = "https://your-ngrok-url.ngrok-free.app"
+# VITE_API_KEY = "your-api-key"

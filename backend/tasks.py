@@ -3,7 +3,7 @@ import whisperx
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import subprocess
 import traceback
 from llama_cpp import Llama
@@ -217,7 +217,7 @@ def generate_summary(text: str, length: str = "medium") -> str:
 
 @celery_app.task(bind=True)
 def transcribe_and_summarize(
-    self, file_path: str, language: str = "auto", summary_length: str = "medium", enable_summary: bool = True
+    self, file_path: str, language: str = "auto", summary_length: str = "medium", enable_summary: bool = True, task_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Main task for transcription and summarization"""
     try:

@@ -1,4 +1,4 @@
-// NurgaVoice JavaScript Application
+// NurgaVoice JavaScript Application - Frontend Version
 class NurgaVoiceApp {
     constructor() {
         this.currentTaskId = null;
@@ -7,8 +7,77 @@ class NurgaVoiceApp {
         this.processingStartTime = null;
         
         this.initializeElements();
+        this.loadConfigurationData();
         this.bindEvents();
+        this.checkApiConnection();
     }
+
+    async checkApiConnection() {
+        // Test API connection on startup
+        try {
+            await window.CONFIG.testApiConnection();
+            console.log('API connection test successful');
+        } catch (error) {
+            console.warn('API connection test failed:', error.message);
+            this.showConnectionError(error.message);
+        }
+    }
+
+    showConnectionError(message) {
+        const connectionAlert = document.createElement('div');
+        connectionAlert.className = 'alert alert-warning alert-dismissible fade show mt-3';
+        connectionAlert.innerHTML = `
+            <strong>Connection Issue:</strong> ${message}
+            <br><small>Make sure your backend server is running and accessible. 
+            Check your configuration and restart the application if needed.</small>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // Insert at the top of the page
+        const container = document.querySelector('.container-fluid');
+        if (container && container.firstChild) {
+            container.insertBefore(connectionAlert, container.firstChild);
+        }
+    }
+
+    async loadConfigurationData() {
+        // Populate language options
+        this.populateLanguageOptions();
+        
+        // Populate summary length options
+        this.populateSummaryLengthOptions();
+        
+        // Update max file size display
+        document.getElementById('maxFileSize').textContent = window.CONFIG.MAX_FILE_SIZE_MB;
+    }
+    
+    populateLanguageOptions() {
+        const languageSelect = document.getElementById('languageSelect');
+        languageSelect.innerHTML = '';
+        
+        Object.entries(window.CONFIG.SUPPORTED_LANGUAGES).forEach(([code, name]) => {
+            const option = document.createElement('option');
+            option.value = code;
+            option.textContent = name;
+            if (code === 'auto') option.selected = true;
+            languageSelect.appendChild(option);
+        });
+    }
+    
+    populateSummaryLengthOptions() {
+        const summaryLengthSelect = document.getElementById('summaryLengthSelect');
+        summaryLengthSelect.innerHTML = '';
+        
+        Object.entries(window.CONFIG.SUMMARY_LENGTHS).forEach(([code, name]) => {
+            const option = document.createElement('option');
+            option.value = code;
+            option.textContent = name;
+            if (code === 'medium') option.selected = true;
+            summaryLengthSelect.appendChild(option);
+        });
+    }
+    
+    // Model info loading removed to reduce frontend size
 
     initializeElements() {
         // Form elements
@@ -91,19 +160,17 @@ class NurgaVoiceApp {
         const file = event.target.files[0];
         if (file) {
             // Validate file size
-            // const maxSize = 100 * 1024 * 1024; // 100MB
-            const maxSize = 512 * 1024 * 1024; // 512MB
+            const maxSize = window.CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024;
             if (file.size > maxSize) {
-                this.showError('File size exceeds 512MB limit.');
+                this.showError(`File size exceeds ${window.CONFIG.MAX_FILE_SIZE_MB}MB limit.`);
                 this.fileInput.value = '';
                 return;
             }
 
             // Validate file type
-            const allowedTypes = ['.mp3', '.wav', '.mp4', '.avi', '.m4a', '.flac', '.ogg'];
             const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-            if (!allowedTypes.includes(fileExtension)) {
-                this.showError('Unsupported file format. Please use MP3, WAV, MP4, AVI, M4A, FLAC, or OGG.');
+            if (!window.CONFIG.ALLOWED_EXTENSIONS.includes(fileExtension)) {
+                this.showError(`Unsupported file format. Please use: ${window.CONFIG.ALLOWED_EXTENSIONS.join(', ')}`);
                 this.fileInput.value = '';
                 return;
             }
@@ -165,6 +232,7 @@ class NurgaVoiceApp {
         formData.set('enable_summary', enableSummaryChecked.toString());
         
         console.log('Summary enabled:', enableSummaryChecked);
+        console.log('API Key being used:', window.CONFIG.API_KEY ? `${window.CONFIG.API_KEY.substring(0, 8)}...` : '[NOT SET]');
         
         if (!file || file.size === 0) {
             this.showError('Please select a file to upload.');
@@ -173,7 +241,6 @@ class NurgaVoiceApp {
 
         console.log('Starting upload process...');
         console.log('File:', file.name, 'Size:', file.size);
-        console.log('Current location:', window.location.href);
         
         this.startProcessing(file.name);
 
@@ -199,6 +266,17 @@ class NurgaVoiceApp {
             // Handle response
             xhr.addEventListener('load', () => {
                 try {
+                    console.log('Server response status:', xhr.status);
+                    console.log('Server response text:', xhr.responseText);
+                    
+                    if (xhr.status === 401) {
+                        throw new Error(`Authentication failed (401). Please check your API key. Current key: ${window.CONFIG.API_KEY ? `${window.CONFIG.API_KEY.substring(0, 8)}...` : '[NOT SET]'}`);
+                    }
+                    
+                    if (xhr.status === 403) {
+                        throw new Error('Access forbidden (403). Your API key may not have the required permissions.');
+                    }
+                    
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const data = JSON.parse(xhr.responseText);
                         console.log('Upload successful, task ID:', data.task_id);
@@ -211,7 +289,7 @@ class NurgaVoiceApp {
                         let errorMessage = `HTTP ${xhr.status}: ${xhr.statusText}`;
                         try {
                             const errorData = JSON.parse(xhr.responseText);
-                            errorMessage = errorData.detail || errorMessage;
+                            errorMessage = errorData.detail || errorData.message || errorMessage;
                         } catch (parseError) {
                             // If we can't parse JSON, use the response text
                             if (xhr.responseText) {
@@ -227,7 +305,7 @@ class NurgaVoiceApp {
                     // Provide more specific error messages
                     let errorMessage = error.message;
                     if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                        errorMessage = 'Network error: Unable to connect to server. Please check your internet connection.';
+                        errorMessage = 'Network error: Unable to connect to server. Please check your internet connection and API URL.';
                     } else if (error.message.includes('insecure') || error.message.includes('mixed content')) {
                         errorMessage = 'Security error: Mixed content detected. This may be due to HTTPS/HTTP protocol mismatch.';
                     }
@@ -241,25 +319,63 @@ class NurgaVoiceApp {
             xhr.addEventListener('error', () => {
                 console.error('Network error during upload');
                 this.stopProcessing();
-                this.showError('Network error: Unable to connect to server. Please check your internet connection.');
-                reject(new Error('Network error'));
+                
+                // Provide more helpful error message with troubleshooting steps
+                const errorMessage = `Network error: Unable to connect to the backend server.
+
+The ngrok tunnel may be inactive or the API URL may be incorrect.
+
+Troubleshooting steps:
+1. Make sure your backend server is running
+2. Verify the ngrok tunnel is active and accessible
+3. Check if the API URL is correct (current: ${window.CONFIG.API_BASE_URL || '[NOT SET]'})
+4. Verify your API key is correct (current: ${window.CONFIG.API_KEY ? `${window.CONFIG.API_KEY.substring(0, 8)}...` : '[NOT SET]'})
+5. Try refreshing the page and entering a new API URL
+
+If you're using ngrok, make sure to:
+- Run 'ngrok http [your-backend-port]' in your terminal
+- Copy the HTTPS URL (not HTTP) from ngrok
+- Update the API URL in this application`;
+                
+                this.showError(errorMessage);
+                
+                reject(new Error(errorMessage));
             });
             
             // Handle timeout
             xhr.addEventListener('timeout', () => {
                 console.error('Upload timeout');
                 this.stopProcessing();
-                this.showError('Upload timeout: The file upload took too long. Please try again with a smaller file.');
+                this.showError('Upload timeout: The file upload took too long. Please try again with a smaller file or check your internet connection.');
                 reject(new Error('Upload timeout'));
             });
             
             // Set up the request
-            xhr.open('POST', '/upload');
-            xhr.setRequestHeader('X-API-Key', window.CONFIG.API_KEY);
-            xhr.timeout = 300000; // 5 minutes timeout
-            
-            // Start the upload
-            xhr.send(formData);
+            try {
+                xhr.open('POST', window.CONFIG.getApiUrl('/upload'));
+                
+                // Set headers with proper authentication
+                xhr.setRequestHeader('X-API-Key', window.CONFIG.API_KEY);
+                xhr.setRequestHeader('ngrok-skip-browser-warning', 'true');  // Skip ngrok browser warning page
+                xhr.timeout = 300000; // 5 minutes timeout
+                
+                console.log('Making request to:', window.CONFIG.getApiUrl('/upload'));
+                console.log('With API key:', window.CONFIG.API_KEY ? `${window.CONFIG.API_KEY.substring(0, 8)}...` : '[NOT SET]');
+                
+                // Start the upload
+                xhr.send(formData);
+            } catch (error) {
+                console.error('Failed to make upload request:', error);
+                this.stopProcessing();
+                
+                let errorMessage = `Configuration error: ${error.message}`;
+                if (error.message.includes('API URL not configured')) {
+                    errorMessage += '\n\nPlease make sure you have entered a valid backend API URL.';
+                }
+                
+                this.showError(errorMessage);
+                reject(error);
+            }
         });
     }
 
@@ -277,20 +393,21 @@ class NurgaVoiceApp {
         this.processingProgressSection.style.display = 'block';
         this.fileInfo.style.display = 'block';
         this.completionInfo.style.display = 'none';
-        this.fileName.textContent = filename;
+        
+        // Set filename only if the element exists
+        if (this.fileName) {
+            this.fileName.textContent = filename;
+        }
         
         // Disable upload button
         this.uploadBtn.disabled = true;
-        this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
+        this.uploadBtn.textContent = 'Uploading...';
         
         // Reset progress bars
         this.updateUploadProgress(0);
         this.updateProgress(0, 'Preparing upload...');
         
         // Reset progress bar styling
-        this.progressBar.classList.remove('bg-success');
-        this.progressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
-        this.uploadProgressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
     }
 
     updateUploadProgress(progress) {
@@ -299,10 +416,8 @@ class NurgaVoiceApp {
             this.uploadProgressBar.textContent = `${progress}%`;
             
             if (progress >= 100) {
-                this.uploadProgressBar.classList.remove('progress-bar-animated');
-                this.uploadProgressBar.classList.add('bg-success');
                 // Update button text when upload completes
-                this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+                this.uploadBtn.textContent = 'Processing...';
             }
         }
     }
@@ -320,7 +435,7 @@ class NurgaVoiceApp {
         
         // Re-enable upload button
         this.uploadBtn.disabled = false;
-        this.uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload & Process';
+        this.uploadBtn.textContent = 'Upload & Process';
         
         // Hide upload progress section
         if (this.uploadProgressSection) {
@@ -340,22 +455,14 @@ class NurgaVoiceApp {
         // Update UI to show we're starting processing
         this.updateProgress(10, 'Starting processing...');
 
-        // Check if we're running through ngrok
-        const isNgrok = window.location.hostname.includes('ngrok');
-        
-        // Use secure WebSocket (wss://) if page is served over HTTPS, otherwise use ws://
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/${this.currentTaskId}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`;
-        
-        console.log('WebSocket URL:', wsUrl);
-        console.log('Page protocol:', window.location.protocol);
-        console.log('Is ngrok:', isNgrok);
-        
         try {
+            const wsUrl = window.CONFIG.getWebSocketUrl(`/ws/${this.currentTaskId}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`);
+            console.log('WebSocket URL:', wsUrl);
+            
             this.websocket = new WebSocket(wsUrl);
         } catch (error) {
             console.error('Failed to create WebSocket:', error);
-            // For ngrok, immediately fall back to polling
+            // Immediately fall back to polling
             this.fallbackToPolling();
             return;
         }
@@ -381,8 +488,8 @@ class NurgaVoiceApp {
             console.error('WebSocket error:', error);
             if (this.isProcessing) {
                 console.log('Falling back to polling due to WebSocket error');
-                // For ngrok or any WebSocket error, immediately fall back to polling
-                this.websocket = null; // Clear the websocket reference
+                // Clear the websocket reference and fall back to polling
+                this.websocket = null;
                 this.fallbackToPolling();
             }
         };
@@ -395,11 +502,19 @@ class NurgaVoiceApp {
         
         const pollInterval = setInterval(async () => {
             try {
-                const response = await fetch(`/status/${this.currentTaskId}`, {
+                const response = await fetch(window.CONFIG.getApiUrl(`/status/${this.currentTaskId}`), {
                     headers: {
-                        'X-API-Key': window.CONFIG.API_KEY
+                        'X-API-Key': window.CONFIG.API_KEY,
+                        'ngrok-skip-browser-warning': 'true'  // Skip ngrok browser warning page
                     }
                 });
+                
+                if (response.status === 401) {
+                    clearInterval(pollInterval);
+                    this.showError('Authentication failed during polling. Please check your API key.');
+                    this.stopProcessing();
+                    return;
+                }
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -446,12 +561,6 @@ class NurgaVoiceApp {
         this.progressBar.textContent = `${progress}%`;
         this.statusMessage.textContent = message;
         
-        // Add animation class for processing
-        if (progress < 100) {
-            this.progressBar.classList.add('progress-bar-animated');
-        } else {
-            this.progressBar.classList.remove('progress-bar-animated');
-        }
     }
 
     handleSuccess(result) {
@@ -471,8 +580,6 @@ class NurgaVoiceApp {
         this.completionTime.textContent = completionTimeText;
         
         // Remove progress bar animation and make it green
-        this.progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
-        this.progressBar.classList.add('bg-success');
         
         setTimeout(() => {
             this.displayResults(result);
@@ -485,29 +592,24 @@ class NurgaVoiceApp {
     }
 
     displayResults(result) {
-        // Keep progress section visible to show completion status
-        // this.progressSection.style.display = 'none'; // Commented out
-        
         // Show results section
         this.resultsSection.style.display = 'block';
         
         // Display summary with fallback and handle disabled summary
         if (result && result.metadata && result.metadata.summary_enabled === false) {
             let summaryMessage = 'Summary generation was disabled for this transcription.';
-            let iconClass = 'fas fa-info-circle';
             let messageClass = 'summary-disabled';
             
             // Check if it was auto-disabled due to short audio
             if (result.metadata.auto_disabled_reason) {
                 summaryMessage = `Summary was automatically disabled: ${result.metadata.auto_disabled_reason}`;
-                iconClass = 'fas fa-clock';
                 messageClass = 'summary-auto-disabled';
             } else if (result.metadata.summary_requested === true) {
                 // User requested summary but it was disabled for another reason
                 summaryMessage = 'Summary generation was disabled during processing.';
             }
             
-            this.summaryContent.innerHTML = `<div class="${messageClass}"><i class="${iconClass} me-2"></i>${summaryMessage}</div>`;
+            this.summaryContent.innerHTML = `<div class="${messageClass}">ℹ️ ${summaryMessage}</div>`;
         } else if (result && result.summary) {
             this.summaryContent.textContent = result.summary;
         } else {
@@ -553,9 +655,7 @@ class NurgaVoiceApp {
         
         if (metadata.language) {
             // Get the full language name from the mappings, fallback to uppercase code
-            const languageName = window.CONFIG.LANGUAGES && window.CONFIG.LANGUAGES[metadata.language] 
-                ? window.CONFIG.LANGUAGES[metadata.language] 
-                : metadata.language.toUpperCase();
+            const languageName = window.CONFIG.SUPPORTED_LANGUAGES[metadata.language] || metadata.language.toUpperCase();
             
             metadataHtml += `
                 <div class="col-md-3 mb-2">
@@ -660,13 +760,17 @@ class NurgaVoiceApp {
     downloadFile(format) {
         if (!this.currentTaskId) return;
         
-        const url = `/download/${this.currentTaskId}/${format}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`;
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `transcription_${this.currentTaskId}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            const url = window.CONFIG.getApiUrl(`/download/${this.currentTaskId}/${format}?api_key=${encodeURIComponent(window.CONFIG.API_KEY)}`);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `transcription_${this.currentTaskId}.${format}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (error) {
+            this.showError(`Download error: ${error.message}`);
+        }
     }
 
     showError(message) {

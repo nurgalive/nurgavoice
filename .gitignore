@@ -54,6 +54,7 @@ results/
 models/*.bin
 models/*.gguf
 models/*.safetensors
+*.gguf
 
 # Logs
 *.log
