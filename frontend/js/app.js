@@ -49,6 +49,9 @@ class NurgaVoiceApp {
         
         // Update max file size display
         document.getElementById('maxFileSize').textContent = window.CONFIG.MAX_FILE_SIZE_MB;
+        
+        // Fetch and display model information
+        await this.loadModelInfo();
     }
     
     populateLanguageOptions() {
@@ -77,7 +80,19 @@ class NurgaVoiceApp {
         });
     }
     
-    // Model info loading removed to reduce frontend size
+    async loadModelInfo() {
+        try {
+            const models = await window.CONFIG.fetchModelInfo();
+            document.getElementById('whisperModel').textContent = models.whisper.toUpperCase();
+            document.getElementById('llmModel').textContent = models.llm;
+            document.getElementById('llmModelDescription').textContent = models.llm_description;
+        } catch (error) {
+            console.warn('Could not load model information:', error);
+            document.getElementById('whisperModel').textContent = 'Unknown';
+            document.getElementById('llmModel').textContent = 'Unknown';
+            document.getElementById('llmModelDescription').textContent = 'Could not load model information';
+        }
+    }
 
     initializeElements() {
         // Form elements
@@ -401,13 +416,16 @@ If you're using ngrok, make sure to:
         
         // Disable upload button
         this.uploadBtn.disabled = true;
-        this.uploadBtn.textContent = 'Uploading...';
+        this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
         
         // Reset progress bars
         this.updateUploadProgress(0);
         this.updateProgress(0, 'Preparing upload...');
         
         // Reset progress bar styling
+        this.progressBar.classList.remove('bg-success');
+        this.progressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
+        this.uploadProgressBar.classList.add('progress-bar-animated', 'progress-bar-striped');
     }
 
     updateUploadProgress(progress) {
@@ -416,8 +434,10 @@ If you're using ngrok, make sure to:
             this.uploadProgressBar.textContent = `${progress}%`;
             
             if (progress >= 100) {
+                this.uploadProgressBar.classList.remove('progress-bar-animated');
+                this.uploadProgressBar.classList.add('bg-success');
                 // Update button text when upload completes
-                this.uploadBtn.textContent = 'Processing...';
+                this.uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
             }
         }
     }
@@ -435,7 +455,7 @@ If you're using ngrok, make sure to:
         
         // Re-enable upload button
         this.uploadBtn.disabled = false;
-        this.uploadBtn.textContent = 'Upload & Process';
+        this.uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Upload & Process';
         
         // Hide upload progress section
         if (this.uploadProgressSection) {
@@ -561,6 +581,12 @@ If you're using ngrok, make sure to:
         this.progressBar.textContent = `${progress}%`;
         this.statusMessage.textContent = message;
         
+        // Add animation class for processing
+        if (progress < 100) {
+            this.progressBar.classList.add('progress-bar-animated');
+        } else {
+            this.progressBar.classList.remove('progress-bar-animated');
+        }
     }
 
     handleSuccess(result) {
@@ -580,6 +606,8 @@ If you're using ngrok, make sure to:
         this.completionTime.textContent = completionTimeText;
         
         // Remove progress bar animation and make it green
+        this.progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+        this.progressBar.classList.add('bg-success');
         
         setTimeout(() => {
             this.displayResults(result);
@@ -598,18 +626,20 @@ If you're using ngrok, make sure to:
         // Display summary with fallback and handle disabled summary
         if (result && result.metadata && result.metadata.summary_enabled === false) {
             let summaryMessage = 'Summary generation was disabled for this transcription.';
+            let iconClass = 'fas fa-info-circle';
             let messageClass = 'summary-disabled';
             
             // Check if it was auto-disabled due to short audio
             if (result.metadata.auto_disabled_reason) {
                 summaryMessage = `Summary was automatically disabled: ${result.metadata.auto_disabled_reason}`;
+                iconClass = 'fas fa-clock';
                 messageClass = 'summary-auto-disabled';
             } else if (result.metadata.summary_requested === true) {
                 // User requested summary but it was disabled for another reason
                 summaryMessage = 'Summary generation was disabled during processing.';
             }
             
-            this.summaryContent.innerHTML = `<div class="${messageClass}">ℹ️ ${summaryMessage}</div>`;
+            this.summaryContent.innerHTML = `<div class="${messageClass}"><i class="${iconClass} me-2"></i>${summaryMessage}</div>`;
         } else if (result && result.summary) {
             this.summaryContent.textContent = result.summary;
         } else {
