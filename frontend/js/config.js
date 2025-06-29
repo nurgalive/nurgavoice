@@ -250,7 +250,10 @@ class NurgaVoiceConfig {
                 this.MODELS = {
                     whisper: data.whisper_model || 'Unknown',
                     llm: data.llm_model_name || 'Unknown',
-                    llm_description: data.llm_model_description || 'Model information not available'
+                    llm_description: data.llm_model_description || 'Model information not available',
+                    diarization_enabled: data.diarization_enabled || false,
+                    diarization_min_speakers: data.diarization_min_speakers || 1,
+                    diarization_max_speakers: data.diarization_max_speakers || 10
                 };
                 return this.MODELS;
             } else {

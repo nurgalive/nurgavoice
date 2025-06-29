@@ -86,6 +86,31 @@ class NurgaVoiceApp {
             document.getElementById('whisperModel').textContent = models.whisper.toUpperCase();
             document.getElementById('llmModel').textContent = models.llm;
             document.getElementById('llmModelDescription').textContent = models.llm_description;
+            
+            // Handle diarization capability
+            if (models.diarization_enabled) {
+                // Show diarization controls
+                const diarizationSection = document.querySelector('.mb-3:has(#enableDiarization)');
+                if (diarizationSection) {
+                    diarizationSection.style.display = 'block';
+                }
+                
+                // Set min/max speaker limits
+                this.minSpeakers.min = models.diarization_min_speakers || 1;
+                this.minSpeakers.max = models.diarization_max_speakers || 10;
+                this.maxSpeakers.min = models.diarization_min_speakers || 1;
+                this.maxSpeakers.max = models.diarization_max_speakers || 10;
+                this.maxSpeakers.value = Math.min(10, models.diarization_max_speakers || 10);
+                
+                console.log('Speaker diarization available:', models.diarization_min_speakers, '-', models.diarization_max_speakers, 'speakers');
+            } else {
+                // Hide diarization controls if not supported
+                const diarizationSection = document.querySelector('.mb-3:has(#enableDiarization)');
+                if (diarizationSection) {
+                    diarizationSection.style.display = 'none';
+                }
+                console.log('Speaker diarization not available on this server');
+            }
         } catch (error) {
             console.warn('Could not load model information:', error);
             document.getElementById('whisperModel').textContent = 'Unknown';
@@ -121,6 +146,7 @@ class NurgaVoiceApp {
         this.metadataContent = document.getElementById('metadataContent');
         this.timestampSection = document.getElementById('timestampSection');
         this.timestampContent = document.getElementById('timestampContent');
+        this.timestampTitle = document.getElementById('timestampTitle');
         
         // Download elements
         this.downloadTxt = document.getElementById('downloadTxt');
@@ -134,6 +160,12 @@ class NurgaVoiceApp {
         // Summary toggle elements
         this.enableSummary = document.getElementById('enableSummary');
         this.summaryOptionsDiv = document.getElementById('summaryOptionsDiv');
+        
+        // Diarization toggle elements
+        this.enableDiarization = document.getElementById('enableDiarization');
+        this.diarizationOptionsDiv = document.getElementById('diarizationOptionsDiv');
+        this.minSpeakers = document.getElementById('minSpeakers');
+        this.maxSpeakers = document.getElementById('maxSpeakers');
     }
 
     bindEvents() {
@@ -143,6 +175,9 @@ class NurgaVoiceApp {
         this.downloadPdf.addEventListener('click', () => this.downloadFile('pdf'));
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         this.enableSummary.addEventListener('change', (e) => this.handleSummaryToggle(e));
+        this.enableDiarization.addEventListener('change', (e) => this.handleDiarizationToggle(e));
+        this.minSpeakers.addEventListener('change', (e) => this.validateSpeakerRange(e));
+        this.maxSpeakers.addEventListener('change', (e) => this.validateSpeakerRange(e));
     }
 
     // Get audio duration from file
@@ -230,6 +265,46 @@ class NurgaVoiceApp {
         }
         
         console.log('Summary generation:', summaryEnabled ? 'enabled' : 'disabled');
+    }
+
+    handleDiarizationToggle(event) {
+        const diarizationEnabled = event.target.checked;
+        
+        // Show/hide diarization options with smooth transition
+        if (diarizationEnabled) {
+            this.diarizationOptionsDiv.style.display = 'block';
+            this.diarizationOptionsDiv.style.opacity = '0';
+            setTimeout(() => {
+                this.diarizationOptionsDiv.style.opacity = '1';
+            }, 10);
+        } else {
+            this.diarizationOptionsDiv.style.opacity = '0';
+            setTimeout(() => {
+                this.diarizationOptionsDiv.style.display = 'none';
+            }, 300);
+        }
+        
+        console.log('Speaker diarization:', diarizationEnabled ? 'enabled' : 'disabled');
+    }
+
+    validateSpeakerRange(event) {
+        const minSpeakers = parseInt(this.minSpeakers.value);
+        const maxSpeakers = parseInt(this.maxSpeakers.value);
+        
+        // Ensure min <= max
+        if (minSpeakers > maxSpeakers) {
+            if (event.target === this.minSpeakers) {
+                this.maxSpeakers.value = minSpeakers;
+            } else {
+                this.minSpeakers.value = maxSpeakers;
+            }
+        }
+        
+        // Clamp values to valid range (1-10)
+        if (minSpeakers < 1) this.minSpeakers.value = 1;
+        if (minSpeakers > 10) this.minSpeakers.value = 10;
+        if (maxSpeakers < 1) this.maxSpeakers.value = 1;
+        if (maxSpeakers > 10) this.maxSpeakers.value = 10;
     }
 
     async handleUpload(event) {
@@ -760,22 +835,70 @@ If you're using ngrok, make sure to:
 
     displayTimestampedTranscription(segments) {
         let timestampHtml = '';
+        let hasSpeakers = false;
+        let speakersDetected = new Set();
         
         segments.forEach(segment => {
             const start = segment.start || 0;
             const end = segment.end || 0;
             const text = segment.text || '';
+            const speaker = segment.speaker || null;
             
             const startTime = this.formatTime(start);
             const endTime = this.formatTime(end);
             
-            timestampHtml += `
-                <div class="mb-2">
-                    <span class="text-primary fw-bold">[${startTime} - ${endTime}]</span>
-                    <span class="ms-2">${text}</span>
-                </div>
-            `;
+            if (speaker) {
+                hasSpeakers = true;
+                speakersDetected.add(speaker);
+                
+                // Get speaker color class (cycle through colors for different speakers)
+                const speakerNumber = speaker.match(/\d+/);
+                const colorIndex = speakerNumber ? parseInt(speakerNumber[0]) % 10 : 0;
+                
+                // Display with speaker information
+                timestampHtml += `
+                    <div class="timestamp-entry">
+                        <span class="text-primary fw-bold">[${startTime} - ${endTime}]</span>
+                        <span class="speaker-badge speaker-badge-${colorIndex} ms-2 me-2">${speaker}</span>
+                        <span>${text}</span>
+                    </div>
+                `;
+            } else {
+                // Display without speaker information (original format)
+                timestampHtml += `
+                    <div class="timestamp-entry">
+                        <span class="text-primary fw-bold">[${startTime} - ${endTime}]</span>
+                        <span class="ms-2">${text}</span>
+                    </div>
+                `;
+            }
         });
+        
+        // Update title based on whether speakers were detected
+        if (hasSpeakers) {
+            const speakerCount = speakersDetected.size;
+            this.timestampTitle.innerHTML = `
+                <i class="fas fa-users me-2"></i>Speaker Diarization 
+                <span class="badge bg-success ms-2">${speakerCount} speaker${speakerCount > 1 ? 's' : ''} detected</span>
+            `;
+            
+            // Add speaker legend if multiple speakers
+            if (speakerCount > 1) {
+                const sortedSpeakers = Array.from(speakersDetected).sort();
+                let legendHtml = '<div class="speaker-legend mb-3"><small class="text-muted me-2">Speakers:</small>';
+                sortedSpeakers.forEach(speaker => {
+                    const speakerNumber = speaker.match(/\d+/);
+                    const colorIndex = speakerNumber ? parseInt(speakerNumber[0]) % 10 : 0;
+                    legendHtml += `<span class="speaker-badge speaker-badge-${colorIndex} me-2">${speaker}</span>`;
+                });
+                legendHtml += '</div>';
+                timestampHtml = legendHtml + timestampHtml;
+            }
+        } else {
+            this.timestampTitle.innerHTML = `
+                <i class="fas fa-clock me-2"></i>Timestamped Transcription
+            `;
+        }
         
         this.timestampContent.innerHTML = timestampHtml;
         this.timestampSection.style.display = 'block';

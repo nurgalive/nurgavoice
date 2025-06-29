@@ -379,3 +379,48 @@ footer .border-top {
 footer .text-warning {
     color: #ffc107 !important;
 }
+
+/* Speaker badge styling for diarization */
+.speaker-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Color variations for different speakers */
+.speaker-badge-0 { background-color: #007bff; color: white; }
+.speaker-badge-1 { background-color: #28a745; color: white; }
+.speaker-badge-2 { background-color: #dc3545; color: white; }
+.speaker-badge-3 { background-color: #ffc107; color: black; }
+.speaker-badge-4 { background-color: #6f42c1; color: white; }
+.speaker-badge-5 { background-color: #fd7e14; color: white; }
+.speaker-badge-6 { background-color: #20c997; color: white; }
+.speaker-badge-7 { background-color: #e83e8c; color: white; }
+.speaker-badge-8 { background-color: #6c757d; color: white; }
+.speaker-badge-9 { background-color: #17a2b8; color: white; }
+
+/* Timestamped transcription styling */
+.timestamp-entry {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-left: 3px solid #dee2e6;
+    background-color: rgba(248, 249, 250, 0.5);
+    border-radius: 0 8px 8px 0;
+    transition: background-color 0.2s ease;
+}
+
+.timestamp-entry:hover {
+    background-color: rgba(248, 249, 250, 0.8);
+    border-left-color: #007bff;
+}
+
+/* Speaker legend styling */
+.speaker-legend {
+    padding: 0.75rem;
+    background-color: rgba(248, 249, 250, 0.8);
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}

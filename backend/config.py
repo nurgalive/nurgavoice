@@ -22,6 +22,12 @@ class Config:
     # AI Models
     WHISPER_MODEL = "base"  # options: tiny, base, small, medium, large
     
+    # Speaker Diarization settings
+    ENABLE_DIARIZATION = True  # Set to False to disable diarization capability
+    DIARIZATION_MIN_SPEAKERS = 1  # Minimum number of speakers to detect
+    DIARIZATION_MAX_SPEAKERS = 10  # Maximum number of speakers to detect
+    HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Required for pyannote.audio models
+    
     # LLM model configuration (now using Gemma 3 as default)
     LLAMA_MODEL_PATH = "models/ggml-org_gemma-3-1b-it-GGUF_gemma-3-1b-it-Q4_K_M.gguf"
     LLAMA_MODEL_CONTEXT_SIZE = 32768  # Gemma 3 supports larger context

@@ -19,6 +19,7 @@ celery_app = Celery(
 # Global variables for loaded models
 whisper_model = None
 llm_model = None  # Renamed from llama_model to be more generic
+diarization_model = None  # For speaker diarization
 
 
 def cleanup_file(file_path: str, description: str = "file") -> None:
@@ -105,7 +106,7 @@ def load_llama_model(model_name: str | None = None):
                 n_ctx=context_size,
                 n_threads=threads,
                 n_gpu_layers=gpu_layers,  # Enable GPU acceleration
-                # verbose=True,  # Enable verbose to see GPU usage
+                verbose=False,  # Enable verbose to see GPU usage
                 # Additional optimizations
                 n_batch=512,  # Batch size for processing
                 use_mmap=True,  # Use memory mapping for faster loading
@@ -127,6 +128,61 @@ def load_llama_model(model_name: str | None = None):
         print("Please download a compatible model file.")
     
     return llm_model
+
+
+def load_diarization_model():
+    """Load speaker diarization model if not already loaded"""
+    global diarization_model
+    
+    if not Config.ENABLE_DIARIZATION:
+        print("🔇 Speaker diarization is disabled in config")
+        return None
+        
+    if diarization_model is None:
+        try:
+            # Check if HuggingFace token is provided
+            if not Config.HUGGINGFACE_TOKEN:
+                print("❌ HuggingFace token not found!")
+                print("   Speaker diarization requires a HuggingFace token.")
+                print("   1. Get your token from: https://huggingface.co/settings/tokens")
+                print("   2. Accept model agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1")
+                print("   3. Set HUGGINGFACE_TOKEN environment variable")
+                return None
+            
+            # Load WhisperX diarization pipeline
+            print("🔄 Loading speaker diarization model...")
+            
+            # Determine device
+            device = "cuda" if os.system("nvidia-smi") == 0 else "cpu"
+            print(f"🎯 Loading diarization model on: {device}")
+            
+            # Load WhisperX DiarizationPipeline
+            from whisperx.diarize import DiarizationPipeline
+            diarization_model = DiarizationPipeline(
+                use_auth_token=Config.HUGGINGFACE_TOKEN, 
+                device=device
+            )
+            
+            print("✅ Speaker diarization model loaded successfully")
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ Error loading diarization model: {error_msg}")
+            
+            if "gated" in error_msg.lower() or "private" in error_msg.lower():
+                print("   🔒 This appears to be a model access issue:")
+                print("   1. Visit https://huggingface.co/pyannote/speaker-diarization-3.1")
+                print("   2. Accept the user agreement for the model")
+                print("   3. Make sure your HuggingFace token has appropriate permissions")
+            elif "authentication" in error_msg.lower() or "token" in error_msg.lower():
+                print("   🔑 This appears to be an authentication issue:")
+                print("   1. Check your HuggingFace token is correct")
+                print("   2. Get a new token from: https://huggingface.co/settings/tokens")
+            
+            print("   Speaker diarization will be disabled for this session.")
+            return None
+    
+    return diarization_model
 
 
 def convert_to_audio(file_path: str) -> str:
@@ -217,7 +273,15 @@ def generate_summary(text: str, length: str = "medium") -> str:
 
 @celery_app.task(bind=True)
 def transcribe_and_summarize(
-    self, file_path: str, language: str = "auto", summary_length: str = "medium", enable_summary: bool = True, task_id: Optional[str] = None
+    self, 
+    file_path: str, 
+    language: str = "auto", 
+    summary_length: str = "medium", 
+    enable_summary: bool = True, 
+    task_id: Optional[str] = None,
+    enable_diarization: bool = False,
+    min_speakers: int = 1,
+    max_speakers: int = 10
 ) -> Dict[str, Any]:
     """Main task for transcription and summarization"""
     try:
@@ -286,6 +350,83 @@ def transcribe_and_summarize(
             print(f"Alignment failed: {e}")
             # Continue without alignment
 
+        # Speaker Diarization (if enabled)
+        speakers_detected = 0
+        if enable_diarization and Config.ENABLE_DIARIZATION:
+            self.update_state(
+                state="PROGRESS", meta={"step": "Performing speaker diarization", "progress": 70}
+            )
+            try:
+                print(f"🔧 DEBUG: Starting diarization - enable_diarization={enable_diarization}, Config.ENABLE_DIARIZATION={Config.ENABLE_DIARIZATION}")
+                diarize_model = load_diarization_model()
+                print(f"🔧 DEBUG: Diarization model loaded: {type(diarize_model)}")
+                if diarize_model:
+                    print("🎭 Starting speaker diarization...")
+                    
+                    # Step 1: Perform diarization on audio to get speaker segments
+                    # Use min/max speakers if specified
+                    print(f"🔧 DEBUG: Calling diarization with min_speakers={min_speakers}, max_speakers={max_speakers}")
+                    if min_speakers is not None and max_speakers is not None:
+                        diarize_segments = diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
+                    else:
+                        diarize_segments = diarize_model(audio)
+                    
+                    print(f"🎯 Diarization completed, found segments: {len(diarize_segments) if hasattr(diarize_segments, '__len__') else 'Unknown'}")
+                    print(f"🔧 DEBUG: Diarization segments type: {type(diarize_segments)}")
+                    print(f"🔧 DEBUG: Diarization segments preview: {diarize_segments.head() if hasattr(diarize_segments, 'head') else str(diarize_segments)[:200]}")
+                    
+                    # Step 2: Assign speakers to transcript segments  
+                    print("🔧 DEBUG: About to call assign_word_speakers")
+                    result = whisperx.assign_word_speakers(diarize_segments, result)
+                    print("🔧 DEBUG: assign_word_speakers completed successfully")
+                    
+                    # Count unique speakers from the result
+                    speakers = set()
+                    for segment in result["segments"]:
+                        if "speaker" in segment and segment["speaker"]:
+                            speakers.add(segment["speaker"])
+                    speakers_detected = len(speakers)
+                    
+                    print(f"✅ Speaker assignment completed. Detected {speakers_detected} speakers: {list(speakers)}")
+                else:
+                    print("⚠️  Diarization model not available, skipping speaker diarization")
+                    print("   Check HuggingFace token and model access permissions")
+                    
+            except Exception as e:
+                error_msg = str(e)
+                print(f"❌ Diarization failed: {error_msg}")
+                print(f"🔧 DEBUG: Exception type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                
+                if "gated" in error_msg.lower() or "private" in error_msg.lower():
+                    print("   🔒 Model access issue - accept user agreement at:")
+                    print("   https://huggingface.co/pyannote/speaker-diarization-3.1")
+                elif "authentication" in error_msg.lower() or "token" in error_msg.lower():
+                    print("   🔑 Authentication issue - check your HuggingFace token")
+                elif "unexpected keyword argument" in error_msg.lower():
+                    print("   📝 API issue - trying fallback without speaker count limits")
+                    try:
+                        # Fallback: try without min/max speakers
+                        diarize_segments = diarize_model(audio)
+                        result = whisperx.assign_word_speakers(diarize_segments, result)
+                        
+                        # Count speakers
+                        speakers = set()
+                        for segment in result["segments"]:
+                            if "speaker" in segment and segment["speaker"]:
+                                speakers.add(segment["speaker"])
+                        speakers_detected = len(speakers)
+                        
+                        print(f"✅ Fallback diarization succeeded. Detected {speakers_detected} speakers: {list(speakers)}")
+                    except Exception as fallback_error:
+                        print(f"   ❌ Fallback also failed: {fallback_error}")
+                
+                if speakers_detected == 0:
+                    print("   Continuing without speaker information")
+        
+        print(f"🔧 DEBUG: Final speakers_detected value: {speakers_detected}")
+
         # Extract text and segments
         full_text = " ".join([segment["text"] for segment in result["segments"]])
 
@@ -335,6 +476,10 @@ def transcribe_and_summarize(
                 "summary_requested": original_enable_summary,  # This shows what the user originally requested
                 "duration": audio_duration,
                 "auto_disabled_reason": "Audio too short (< 30 seconds)" if original_enable_summary and not enable_summary and audio_duration is not None and audio_duration < 30 else None,
+                "diarization_enabled": enable_diarization,
+                "speakers_detected": speakers_detected,
+                "min_speakers": min_speakers,
+                "max_speakers": max_speakers,
             },
         }
 

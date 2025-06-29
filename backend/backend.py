@@ -124,8 +124,9 @@ app.add_middleware(
         "http://localhost:3000",  # Local development
         "http://127.0.0.1:3000",  # Local development
         "https://*.netlify.app",  # Netlify deployments
-        "https://*.netlify.com",  # Netlify deployments
         "https://nurgavoice.netlify.app",  # Your specific Netlify domain
+        "https://nurgavoice.online",  # Your production domain
+        "https://loved-magpie-routinely.ngrok-free.app",  # ngrok URL
         "*"  # Allow all origins in development - restrict in production
     ],
     allow_credentials=True,
@@ -235,7 +236,10 @@ async def get_api_info():
         "supported_languages": Config.SUPPORTED_LANGUAGES,
         "language_names": Config.LANGUAGE_NAMES,
         "summary_lengths": Config.SUMMARY_LENGTHS,
-        "allowed_extensions": list(Config.ALLOWED_EXTENSIONS)
+        "allowed_extensions": list(Config.ALLOWED_EXTENSIONS),
+        "diarization_enabled": Config.ENABLE_DIARIZATION,
+        "diarization_min_speakers": Config.DIARIZATION_MIN_SPEAKERS,
+        "diarization_max_speakers": Config.DIARIZATION_MAX_SPEAKERS
     }
 
 # Health check endpoint
@@ -266,7 +270,10 @@ async def upload_file(
     file: UploadFile = File(...),
     language: str = Form("auto"),
     summary_length: str = Form("medium"),
-    enable_summary: str = Form("true")
+    enable_summary: str = Form("true"),
+    enable_diarization: str = Form("false"),
+    min_speakers: int = Form(1),
+    max_speakers: int = Form(10)
 ):
     """Upload and process audio/video file"""
     try:
@@ -286,8 +293,17 @@ async def upload_file(
             content = await file.read()
             await f.write(content)
         
-        # Convert enable_summary to boolean
+        # Convert enable_summary and enable_diarization to boolean
         enable_summary_bool = enable_summary.lower() in ('true', '1', 'yes', 'on')
+        enable_diarization_bool = enable_diarization.lower() in ('true', '1', 'yes', 'on')
+        
+        # Validate diarization settings
+        if enable_diarization_bool and not Config.ENABLE_DIARIZATION:
+            raise HTTPException(status_code=400, detail="Speaker diarization is not enabled on this server")
+        
+        # Clamp speaker range to configured limits
+        min_speakers = max(Config.DIARIZATION_MIN_SPEAKERS, min(min_speakers, Config.DIARIZATION_MAX_SPEAKERS))
+        max_speakers = max(min_speakers, min(max_speakers, Config.DIARIZATION_MAX_SPEAKERS))
         
         # Start background task
         task = transcribe_and_summarize.delay(
@@ -295,7 +311,10 @@ async def upload_file(
             language,
             summary_length,
             enable_summary_bool,
-            task_id
+            task_id,
+            enable_diarization_bool,
+            min_speakers,
+            max_speakers
         )
         
         # Store task mapping
@@ -305,7 +324,10 @@ async def upload_file(
             "filename": file.filename,
             "language": language,
             "summary_length": summary_length,
-            "enable_summary": enable_summary_bool
+            "enable_summary": enable_summary_bool,
+            "enable_diarization": enable_diarization_bool,
+            "min_speakers": min_speakers,
+            "max_speakers": max_speakers
         })
         
         return {"task_id": task_id, "status": "started"}
@@ -459,9 +481,14 @@ def create_txt_response(result, task_id):
             start = segment.get('start', 0)
             end = segment.get('end', 0)
             text = segment.get('text', '')
+            speaker = segment.get('speaker', None)
             start_time = f"{int(start//60)}:{int(start%60):02d}"
             end_time = f"{int(end//60)}:{int(end%60):02d}"
-            content.append(f"[{start_time} - {end_time}] {text}")
+            
+            if speaker:
+                content.append(f"[{start_time} - {end_time}] {speaker}: {text}")
+            else:
+                content.append(f"[{start_time} - {end_time}] {text}")
         content.append("")
     
     txt_content = "\n".join(content)
@@ -506,9 +533,14 @@ def create_md_response(result, task_id):
             start = segment.get('start', 0)
             end = segment.get('end', 0)
             text = segment.get('text', '')
+            speaker = segment.get('speaker', None)
             start_time = f"{int(start//60)}:{int(start%60):02d}"
             end_time = f"{int(end//60)}:{int(end%60):02d}"
-            content.append(f"**[{start_time} - {end_time}]** {text}")
+            
+            if speaker:
+                content.append(f"**[{start_time} - {end_time}] {speaker}:** {text}")
+            else:
+                content.append(f"**[{start_time} - {end_time}]** {text}")
             content.append("")  # Add empty line after each timestamp entry
         content.append("")
     
@@ -557,10 +589,15 @@ def create_pdf_response(result, task_id):
             start = segment.get('start', 0)
             end = segment.get('end', 0)
             text = segment.get('text', '')
+            speaker = segment.get('speaker', None)
             # Format timestamp similar to other formats
             start_time = f"{int(start//60)}:{int(start%60):02d}"
             end_time = f"{int(end//60)}:{int(end%60):02d}"
-            timestamp_text = f"<b>[{start_time} - {end_time}]</b> {text}"
+            
+            if speaker:
+                timestamp_text = f"<b>[{start_time} - {end_time}] {speaker}:</b> {text}"
+            else:
+                timestamp_text = f"<b>[{start_time} - {end_time}]</b> {text}"
             story.append(Paragraph(timestamp_text, styles['Normal']))
         story.append(Spacer(1, 12))
     
