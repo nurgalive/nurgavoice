@@ -40,7 +40,6 @@ class NurgaVoiceConfig {
                 'short': 'Short (1-2 sentences)',
                 'medium': 'Medium (1 paragraph)',
                 'long': 'Long (2-3 paragraphs)',
-                'detailed': 'Detailed (multiple paragraphs)'
             },
             
             // Model Information (will be fetched from API)

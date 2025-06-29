@@ -449,6 +449,20 @@ def create_txt_response(result, task_id):
         content.append("=" * 50)
         for key, value in result['metadata'].items():
             content.append(f"{key}: {value}")
+        content.append("")
+    
+    # Add timestamped transcription if available
+    if result.get('transcription', {}).get('segments'):
+        content.append("TIMESTAMPED TRANSCRIPTION")
+        content.append("=" * 50)
+        for segment in result['transcription']['segments']:
+            start = segment.get('start', 0)
+            end = segment.get('end', 0)
+            text = segment.get('text', '')
+            start_time = f"{int(start//60)}:{int(start%60):02d}"
+            end_time = f"{int(end//60)}:{int(end%60):02d}"
+            content.append(f"[{start_time} - {end_time}] {text}")
+        content.append("")
     
     txt_content = "\n".join(content)
     
@@ -533,6 +547,20 @@ def create_pdf_response(result, task_id):
         story.append(Paragraph("Metadata", styles['Heading1']))
         for key, value in result['metadata'].items():
             story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
+        story.append(Spacer(1, 12))
+    
+    # Add timestamped transcription if available
+    if result.get('transcription', {}).get('segments'):
+        story.append(Paragraph("Timestamped Transcription", styles['Heading1']))
+        for segment in result['transcription']['segments']:
+            start = segment.get('start', 0)
+            end = segment.get('end', 0)
+            text = segment.get('text', '')
+            # Format timestamp similar to other formats
+            start_time = f"{int(start//60)}:{int(start%60):02d}"
+            end_time = f"{int(end//60)}:{int(end%60):02d}"
+            timestamp_text = f"<b>[{start_time} - {end_time}]</b> {text}"
+            story.append(Paragraph(timestamp_text, styles['Normal']))
         story.append(Spacer(1, 12))
     
     doc.build(story)
