@@ -509,6 +509,7 @@ def create_md_response(result, task_id):
             start_time = f"{int(start//60)}:{int(start%60):02d}"
             end_time = f"{int(end//60)}:{int(end%60):02d}"
             content.append(f"**[{start_time} - {end_time}]** {text}")
+            content.append("")  # Add empty line after each timestamp entry
         content.append("")
     
     md_content = "\n".join(content)
