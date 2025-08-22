@@ -4,8 +4,8 @@ class NurgaVoiceConfig {
         // Default configuration - will be overridden by environment variables
         this.DEFAULT_CONFIG = {
             // API Configuration - Set to null to force user input
-            API_BASE_URL: 'https://loved-magpie-routinely.ngrok-free.app',
-            API_KEY: 'W--jR-7hR7w9DJyOOMU24pURPiIaGN9qt2a5iAMv55k',
+            API_BASE_URL: 'localhost:8000',
+            API_KEY: 'nurgavoice-demo-key-2025',
             
             // File Upload Settings
             MAX_FILE_SIZE_MB: 512,
@@ -55,12 +55,20 @@ class NurgaVoiceConfig {
     }
     
     loadConfig() {
-        // Check for environment variables (set by build process or runtime)
-        const envApiUrl = this.getEnvVar('VITE_API_BASE_URL') || this.getEnvVar('REACT_APP_API_BASE_URL');
-        const envApiKey = this.getEnvVar('VITE_API_KEY') || this.getEnvVar('REACT_APP_API_KEY');
+        // Check for environment variables (Vite automatically injects VITE_ prefixed variables)
+        const envApiUrl = import.meta.env.VITE_API_BASE_URL;
+        const envApiKey = import.meta.env.VITE_API_KEY;
         
-        // Production detection
-        const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        // Development/Production detection
+        const isDevelopment = import.meta.env.DEV;
+        const isProduction = import.meta.env.PROD;
+        
+        console.log('Environment:', {
+            isDevelopment,
+            isProduction,
+            mode: import.meta.env.MODE,
+            nodeEnv: import.meta.env.VITE_NODE_ENV
+        });
         
         // Set API base URL - prioritize environment variables, then stored URL, then prompt
         if (envApiUrl) {
@@ -100,13 +108,9 @@ class NurgaVoiceConfig {
         console.log('NurgaVoice Config loaded:', {
             API_BASE_URL: this.API_BASE_URL || '[NOT SET]',
             API_KEY: this.API_KEY ? `${this.API_KEY.substring(0, 8)}...` : '[NOT SET]',
-            MAX_FILE_SIZE_MB: this.MAX_FILE_SIZE_MB
+            MAX_FILE_SIZE_MB: this.MAX_FILE_SIZE_MB,
+            environment: import.meta.env.MODE
         });
-    }
-    
-    getEnvVar(name) {
-        // Only try to get environment variable from window object (browser environment)
-        return window?.[name] || null;
     }
     
     detectOrPromptApiUrl() {
@@ -268,4 +272,10 @@ class NurgaVoiceConfig {
 }
 
 // Create global configuration instance
-window.CONFIG = new NurgaVoiceConfig();
+const CONFIG = new NurgaVoiceConfig();
+
+// Export for ES modules
+export default CONFIG;
+
+// Also make it available globally for backward compatibility
+window.CONFIG = CONFIG;

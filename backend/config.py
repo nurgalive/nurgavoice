@@ -20,7 +20,7 @@ class Config:
     # but will consume more disk space over time
     
     # AI Models
-    WHISPER_MODEL = "base"  # options: tiny, base, small, medium, large
+    WHISPER_MODEL = "large-v3"  # options: tiny, base, small, medium, large
     
     # Speaker Diarization settings
     ENABLE_DIARIZATION = True  # Set to False to disable diarization capability

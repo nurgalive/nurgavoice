@@ -1,4 +1,7 @@
-// NurgaVoice JavaScript Application - Frontend Version
+// Import configuration
+import CONFIG from './config.js';
+
+// NurgaVoiceApp JavaScript Application - Frontend Version
 class NurgaVoiceApp {
     constructor() {
         this.currentTaskId = null;

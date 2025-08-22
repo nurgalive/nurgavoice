@@ -1,14 +1,18 @@
 {
   "name": "nurgavoice-frontend",
   "version": "1.0.0",
-  "description": "NurgaVoice Frontend - Audio/Video Transcription & Summarization Service",
+  "description": "NurgaVoice Frontend Application",
   "main": "index.html",
+  "type": "module",
   "scripts": {
-    "start": "python -m http.server 3000",
-    "dev": "python -m http.server 3000",
-    "build": "echo 'No build needed for static files'",
-    "preview": "python -m http.server 3000"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "dependencies": {},
   "keywords": [
     "transcription",
     "audio",
@@ -18,12 +22,6 @@
     "summarization",
     "llm"
   ],
-  "author": "NurgaVoice Team",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/nurgalive/nurgavoice"
-  },
-  "dependencies": {},
-  "devDependencies": {}
+  "author": "@nurgalive",
+  "license": "MIT"
 }
